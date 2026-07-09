@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-from humanoidverse.utils.torch_utils import *
+from humanoidverse.utils.torch_utils import * # noqa : F405
 # from isaacgym import gymtorch, gymapi, gymutil
 
 import torch
@@ -112,7 +112,7 @@ class LeggedRobotBase(BaseTask):
         ######################################### DR related tensors #########################################
         if self.config.domain_rand.randomize_ctrl_delay:
             self.action_queue = torch.zeros(self.num_envs, self.config.domain_rand.ctrl_delay_step_range[1]+1, self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
-            self.action_delay_idx = torch.randint(self.config.domain_rand.ctrl_delay_step_range[0], 
+            self.action_delay_idx = torch.randint(self.config.domain_rand.ctrl_delay_step_range[0],
                                                 self.config.domain_rand.ctrl_delay_step_range[1]+1, (self.num_envs,), device=self.device, requires_grad=False)
 
         # self._link_mass_scale = torch.ones(self.num_envs, len(self.config.robot.randomize_link_body_names), dtype=torch.float, device=self.device, requires_grad=False)
@@ -130,14 +130,14 @@ class LeggedRobotBase(BaseTask):
             Looks for self._reward_<REWARD_NAME>, where <REWARD_NAME> are names of all non zero reward scales in the cfg.
         """
         logger.info(colored(f"{self.config.rewards.set_reward} set reward on {self.config.rewards.set_reward_date}", "green"))
-        
+
         self.reward_scales = self.config.rewards.reward_scales
         # remove zero scales + multiply non-zero ones by dt
         for key in list(self.reward_scales.keys()):
             logger.info(f"Scale: {key} = {self.reward_scales[key]}")
             scale = self.reward_scales[key]
             if scale==0:
-                self.reward_scales.pop(key) 
+                self.reward_scales.pop(key)
             else:
                 self.reward_scales[key] *= self.dt
 
@@ -149,7 +149,7 @@ class LeggedRobotBase(BaseTask):
         if self.use_reward_penalty_curriculum:
             logger.info(f"Penalty Reward Names: {self.config.rewards.reward_penalty_reward_names}")
             logger.info(f"Penalty Reward Initial Scale: {self.config.rewards.reward_initial_penalty_scale}")
-        
+
         self.use_reward_limits_dof_pos_curriculum = self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_pos_curriculum
         self.use_reward_limits_dof_vel_curriculum = self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_curriculum
         self.use_reward_limits_torque_curriculum = self.config.rewards.reward_limit.reward_limits_curriculum.soft_torque_curriculum
@@ -160,14 +160,14 @@ class LeggedRobotBase(BaseTask):
             logger.info(f"Reward Limits DOF Curriculum Max Limit: {self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_pos_max_limit}")
             logger.info(f"Reward Limits DOF Curriculum Min Limit: {self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_pos_min_limit}")
             self.soft_dof_pos_curriculum_value = self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_pos_initial_limit
-        
+
         if self.use_reward_limits_dof_vel_curriculum:
             logger.info(f"Use Reward Limits DOF Vel Curriculum: {self.use_reward_limits_dof_vel_curriculum}")
             logger.info(f"Reward Limits DOF Vel Curriculum Initial Limit: {self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_initial_limit}")
             logger.info(f"Reward Limits DOF Vel Curriculum Max Limit: {self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_max_limit}")
             logger.info(f"Reward Limits DOF Vel Curriculum Min Limit: {self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_min_limit}")
             self.soft_dof_vel_curriculum_value = self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_initial_limit
-        
+
         if self.use_reward_limits_torque_curriculum:
             logger.info(f"Use Reward Limits Torque Curriculum: {self.use_reward_limits_torque_curriculum}")
             logger.info(f"Reward Limits Torque Curriculum Initial Limit: {self.config.rewards.reward_limit.reward_limits_curriculum.soft_torque_initial_limit}")
@@ -191,7 +191,7 @@ class LeggedRobotBase(BaseTask):
     def set_is_evaluating(self):
         logger.info("Setting Env is evaluating")
         self.is_evaluating = True
-    
+
     def step(self, actor_state):
         """ Apply actions, simulate, call self.post_physics_step()
         Args:
@@ -258,7 +258,7 @@ class LeggedRobotBase(BaseTask):
             self.need_to_refresh_envs[refresh_env_ids] = False
 
         self._compute_observations() # in some cases a simulation step might be required to refresh some obs (for example body positions)
-        
+
         self._post_compute_observations_callback()
 
         # return clipped obs, clipped states (None), rewards, dones and infos
@@ -275,7 +275,7 @@ class LeggedRobotBase(BaseTask):
             self._setup_simulator_next_task()
             if self.debug_viz:
                 self._draw_debug_vis()
-    
+
     def _setup_simulator_next_task(self):
         pass
 
@@ -336,23 +336,23 @@ class LeggedRobotBase(BaseTask):
         if self.config.termination.terminate_when_close_to_dof_pos_limit:
             out_of_dof_pos_limits = -(self.simulator.dof_pos - self.simulator.dof_pos_limits_termination[:, 0]).clip(max=0.) # lower limit
             out_of_dof_pos_limits += (self.simulator.dof_pos - self.simulator.dof_pos_limits_termination[:, 1]).clip(min=0.)
-            
+
             out_of_dof_pos_limits = torch.sum(out_of_dof_pos_limits, dim=1)
             # get random number between 0 and 1, if it is smaller than self.config.termination_probality.terminate_when_close_to_dof_pos_limit, apply the termination
             if torch.rand(1) < self.config.termination_probality.terminate_when_close_to_dof_pos_limit:
                 self.reset_buf |= out_of_dof_pos_limits > 0.
-        
+
         if self.config.termination.terminate_when_close_to_dof_vel_limit:
             out_of_dof_vel_limits = torch.sum((torch.abs(self.simulator.dof_vel) - self.dof_vel_limits * self.config.termination_scales.termination_close_to_dof_vel_limit).clip(min=0., max=1.), dim=1)
-            
-            
+
+
 
             if torch.rand(1) < self.config.termination_probality.terminate_when_close_to_dof_vel_limit:
                 self.reset_buf |= out_of_dof_vel_limits > 0.
-        
+
         if self.config.termination.terminate_when_close_to_torque_limit:
             out_of_torque_limits = torch.sum((torch.abs(self.torques) - self.torque_limits * self.config.termination_scales.termination_close_to_torque_limit).clip(min=0., max=1.), dim=1)
-            
+
             if torch.rand(1) < self.config.termination_probality.terminate_when_close_to_torque_limit:
                 self.reset_buf |= out_of_torque_limits > 0.
 
@@ -404,15 +404,15 @@ class LeggedRobotBase(BaseTask):
             self._update_reward_limits_curriculum()
         if self.add_noise_currculum:
             self._update_obs_noise_curriculum()
-    
+
     def _update_obs_noise_curriculum(self):
         if self.average_episode_length < self.config.obs.soft_dof_pos_curriculum_level_down_threshold:
             self.current_noise_curriculum_value *= (1 - self.config.obs.soft_dof_pos_curriculum_degree)
         elif self.average_episode_length > self.config.rewards.reward_penalty_level_up_threshold:
             self.current_noise_curriculum_value *= (1 + self.config.obs.soft_dof_pos_curriculum_degree)
 
-        self.current_noise_curriculum_value = np.clip(self.current_noise_curriculum_value, 
-                                                      self.config.obs.noise_value_min, 
+        self.current_noise_curriculum_value = np.clip(self.current_noise_curriculum_value,
+                                                      self.config.obs.noise_value_min,
                                                       self.config.obs.noise_value_max)
 
     def _reset_buffers_callback(self, env_ids, target_buf=None):
@@ -505,14 +505,14 @@ class LeggedRobotBase(BaseTask):
         if self.use_reward_penalty_curriculum:
             self.log_dict["penalty_scale"] = torch.tensor(self.reward_penalty_scale, dtype=torch.float)
             self.log_dict["average_episode_length"] = self.average_episode_length
-        
+
         if self.use_reward_limits_dof_pos_curriculum:
             self.log_dict["soft_dof_pos_curriculum_value"] = torch.tensor(self.soft_dof_pos_curriculum_value, dtype=torch.float)
         if self.use_reward_limits_dof_vel_curriculum:
             self.log_dict["soft_dof_vel_curriculum_value"] = torch.tensor(self.soft_dof_vel_curriculum_value, dtype=torch.float)
         if self.use_reward_limits_torque_curriculum:
             self.log_dict["soft_torque_curriculum_value"] = torch.tensor(self.soft_torque_curriculum_value, dtype=torch.float)
-        
+
         if self.add_noise_currculum:
             self.log_dict["current_noise_curriculum_value"] = torch.tensor(self.current_noise_curriculum_value, dtype=torch.float)
     def _compute_observations(self):
@@ -521,7 +521,7 @@ class LeggedRobotBase(BaseTask):
         # super().compute_observations()
         self.obs_buf_dict_raw = {}
         self.hist_obs_dict = {}
-        
+
         if self.add_noise_currculum:
             noise_extra_scale = self.current_noise_curriculum_value
         else:
@@ -532,21 +532,21 @@ class LeggedRobotBase(BaseTask):
             self.obs_buf_dict_raw[obs_key] = dict()
 
             parse_observation(self, obs_config, self.obs_buf_dict_raw[obs_key], self.config.obs.obs_scales, self.config.obs.noise_scales, noise_extra_scale)
-        
+
         # Compute history observations
         history_obs_list = self.history_handler.history.keys()
         parse_observation(self, history_obs_list, self.hist_obs_dict, self.config.obs.obs_scales, self.config.obs.noise_scales, noise_extra_scale)
-        
+
         self._post_config_observation_callback()
 
     def _post_config_observation_callback(self):
         self.obs_buf_dict = dict()
-        
+
         for obs_key, obs_config in self.config.obs.obs_dict.items():
             obs_keys = sorted(obs_config)
-            # print("obs_keys", obs_keys)            
+            # print("obs_keys", obs_keys)
             self.obs_buf_dict[obs_key] = torch.cat([self.obs_buf_dict_raw[obs_key][key] for key in obs_keys], dim=-1)
-    
+
     def _compute_torques(self, actions):
         """ Compute torques from actions.
             Actions can be interpreted as position or velocity targets given to a PD controller, or directly as scaled torques.
@@ -567,13 +567,13 @@ class LeggedRobotBase(BaseTask):
             torques = actions_scaled
         else:
             raise NameError(f"Unknown controller type: {control_type}")
-        
+
         if self.config.domain_rand.randomize_torque_rfi:
             torques = torques + (torch.rand_like(torques)*2.-1.) * self.config.domain_rand.rfi_lim * self._rfi_lim_scale * self.torque_limits
-        
+
         if self.config.robot.control.clip_torques:
             return torch.clip(torques, -self.torque_limits, self.torque_limits)
-        
+
         else:
             return torques
 
@@ -592,7 +592,7 @@ class LeggedRobotBase(BaseTask):
         not_draw_env_ids = (self.push_robot_plot_counter >= 10).nonzero(as_tuple=False).flatten()
         self.record_push_robot_vel_buf[not_draw_env_ids] *=0
         self.push_robot_plot_counter[not_draw_env_ids] = 0
-        
+
         for env_id in draw_env_ids:
             push_vel = self.record_push_robot_vel_buf[env_id]
             push_vel = torch.cat([push_vel, torch.zeros(1, device=self.device)])
@@ -615,10 +615,10 @@ class LeggedRobotBase(BaseTask):
     def _update_average_episode_length(self, env_ids):
         num = len(env_ids)
         current_average_episode_length = torch.mean(self.last_episode_length_buf[env_ids], dtype=torch.float)
-        
+
         self.average_episode_length = self.average_episode_length * (1 - num / self.num_compute_average_epl) + current_average_episode_length * (num / self.num_compute_average_epl)
 
-        
+
     def _update_reward_penalty_curriculum(self):
         """
         Update the penalty curriculum based on the average episode length.
@@ -648,26 +648,26 @@ class LeggedRobotBase(BaseTask):
                 self.soft_dof_pos_curriculum_value *= (1 + self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_pos_curriculum_degree)
             elif self.average_episode_length > self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_pos_curriculum_level_up_threshold:
                 self.soft_dof_pos_curriculum_value *= (1 - self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_pos_curriculum_degree)
-            self.soft_dof_pos_curriculum_value = np.clip(self.soft_dof_pos_curriculum_value, 
-                                                         self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_pos_min_limit, 
+            self.soft_dof_pos_curriculum_value = np.clip(self.soft_dof_pos_curriculum_value,
+                                                         self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_pos_min_limit,
                                                          self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_pos_max_limit)
-        
+
         if self.use_reward_limits_dof_vel_curriculum:
             if self.average_episode_length < self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_curriculum_level_down_threshold:
                 self.soft_dof_vel_curriculum_value *= (1 + self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_curriculum_degree)
             elif self.average_episode_length > self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_curriculum_level_up_threshold:
                 self.soft_dof_vel_curriculum_value *= (1 - self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_curriculum_degree)
-            self.soft_dof_vel_curriculum_value = np.clip(self.soft_dof_vel_curriculum_value, 
-                                                         self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_min_limit, 
+            self.soft_dof_vel_curriculum_value = np.clip(self.soft_dof_vel_curriculum_value,
+                                                         self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_min_limit,
                                                          self.config.rewards.reward_limit.reward_limits_curriculum.soft_dof_vel_max_limit)
-        
+
         if self.use_reward_limits_torque_curriculum:
             if self.average_episode_length < self.config.rewards.reward_limit.reward_limits_curriculum.soft_torque_curriculum_level_down_threshold:
                 self.soft_torque_curriculum_value *= (1 + self.config.rewards.reward_limit.reward_limits_curriculum.soft_torque_curriculum_degree)
             elif self.average_episode_length > self.config.rewards.reward_limit.reward_limits_curriculum.soft_torque_curriculum_level_up_threshold:
                 self.soft_torque_curriculum_value *= (1 - self.config.rewards.reward_limit.reward_limits_curriculum.soft_torque_curriculum_degree)
-            self.soft_torque_curriculum_value = np.clip(self.soft_torque_curriculum_value, 
-                                                        self.config.rewards.reward_limit.reward_limits_curriculum.soft_torque_min_limit, 
+            self.soft_torque_curriculum_value = np.clip(self.soft_torque_curriculum_value,
+                                                        self.config.rewards.reward_limit.reward_limits_curriculum.soft_torque_min_limit,
                                                         self.config.rewards.reward_limit.reward_limits_curriculum.soft_torque_max_limit)
 
     #------------ reward functions----------------
@@ -680,15 +680,15 @@ class LeggedRobotBase(BaseTask):
     def _reward_penalty_torques(self):
         # Penalize torques
         return torch.sum(torch.square(self.torques), dim=1)
-    
+
     def _reward_penalty_dof_vel(self):
         # Penalize dof velocities
         return torch.sum(torch.square(self.simulator.dof_vel), dim=1)
-    
+
     def _reward_penalty_dof_acc(self):
         # Penalize dof accelerations
         return torch.sum(torch.square((self.last_dof_vel - self.simulator.dof_vel) / self.dt), dim=1)
-    
+
     def _reward_penalty_action_rate(self):
         # Penalize changes in actions
         return torch.sum(torch.square(self.last_actions - self.actions), dim=1)
@@ -739,7 +739,7 @@ class LeggedRobotBase(BaseTask):
         # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
         # Jiawei: Key ingredient.
         contact = self.simulator.contact_forces[:, self.feet_indices, 2] > 1.
-        contact_filt = torch.logical_or(contact, self.last_contacts) 
+        contact_filt = torch.logical_or(contact, self.last_contacts)
         from_air_to_contact = torch.logical_and(contact_filt, ~self.last_contacts_filt)
         self.last_contacts = contact
         self.last_contacts_filt = contact_filt
@@ -748,7 +748,7 @@ class LeggedRobotBase(BaseTask):
         rew_feet_max_height = torch.sum((torch.clamp_min(self.config.rewards.desired_feet_max_height_for_this_air - self.feet_air_max_height, 0)) * from_air_to_contact, dim=1) # reward only on first contact with the ground
         self.feet_air_max_height *= ~contact_filt
         return rew_feet_max_height
-    
+
     def _reward_feet_heading_alignment(self):
         left_quat = self.simulator._rigid_body_rot[:, self.feet_indices[0]]
         right_quat = self.simulator._rigid_body_rot[:, self.feet_indices[1]]
@@ -764,16 +764,16 @@ class LeggedRobotBase(BaseTask):
 
         heading_diff_left = torch.abs(wrap_to_pi(heading_left_feet - heading_root))
         heading_diff_right = torch.abs(wrap_to_pi(heading_right_feet - heading_root))
-        
+
         return heading_diff_left + heading_diff_right
-    
+
     def _reward_penalty_feet_ori(self):
         left_quat = self.simulator._rigid_body_rot[:, self.feet_indices[0]]
         left_gravity = quat_rotate_inverse(left_quat, self.gravity_vec)
         right_quat = self.simulator._rigid_body_rot[:, self.feet_indices[1]]
         right_gravity = quat_rotate_inverse(right_quat, self.gravity_vec)
-        return torch.sum(torch.square(left_gravity[:, :2]), dim=1)**0.5 + torch.sum(torch.square(right_gravity[:, :2]), dim=1)**0.5 
-    
+        return torch.sum(torch.square(left_gravity[:, :2]), dim=1)**0.5 + torch.sum(torch.square(right_gravity[:, :2]), dim=1)**0.5
+
     def _episodic_domain_randomization(self, env_ids):
         """ Update scale of Kp, Kd, rfi lim"""
         if len(env_ids) == 0:
@@ -781,20 +781,20 @@ class LeggedRobotBase(BaseTask):
         if self.config.domain_rand.randomize_pd_gain:
             self._kp_scale[env_ids] = torch_rand_float(self.config.domain_rand.kp_range[0], self.config.domain_rand.kp_range[1], (len(env_ids), self.num_dofs), device=self.device)
             self._kd_scale[env_ids] = torch_rand_float(self.config.domain_rand.kd_range[0], self.config.domain_rand.kd_range[1], (len(env_ids), self.num_dofs), device=self.device)
-    
+
         if self.config.domain_rand.randomize_rfi_lim:
             self._rfi_lim_scale[env_ids] = torch_rand_float(self.config.domain_rand.rfi_lim_range[0], self.config.domain_rand.rfi_lim_range[1], (len(env_ids), self.num_dofs), device=self.device)
 
-        if self.config.domain_rand.randomize_ctrl_delay:            
+        if self.config.domain_rand.randomize_ctrl_delay:
             # self.action_queue[env_ids] = 0.delay:
             self.action_queue[env_ids] *= 0.
             # self.action_queue[env_ids] = 0.
-            self.action_delay_idx[env_ids] = torch.randint(self.config.domain_rand.ctrl_delay_step_range[0], 
+            self.action_delay_idx[env_ids] = torch.randint(self.config.domain_rand.ctrl_delay_step_range[0],
                                             self.config.domain_rand.ctrl_delay_step_range[1]+1, (len(env_ids),), device=self.device, requires_grad=False)
 
 
     def _push_robots(self, env_ids):
-        """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. 
+        """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity.
         """
         if len(env_ids) == 0:
             return
@@ -827,7 +827,7 @@ class LeggedRobotBase(BaseTask):
             self.simulator.dof_pos[env_ids] = self.default_dof_pos * torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=str(self.device))
             # self.simulator.dof_pos[env_ids] = self.default_dof_pos
             # import ipdb; ipdb.set_trace()
-            
+
             self.simulator.dof_vel[env_ids] = 0.
 
 
@@ -852,7 +852,7 @@ class LeggedRobotBase(BaseTask):
                 self.simulator.robot_root_states[env_ids] = self.base_init_state
                 self.simulator.robot_root_states[env_ids, :3] += self.env_origins[env_ids]
             # base velocities
-            
+
             self.simulator.robot_root_states[env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6), device=str(self.device)) # [7:10]: lin vel, [10:13]: ang vel
 
 
@@ -862,26 +862,26 @@ class LeggedRobotBase(BaseTask):
     ######################### Observations #########################
     def _get_obs_base_pos_z(self,):
         return self.simulator.robot_root_states[:, 2:3]
-    
+
     def _get_obs_feet_contact_force(self,):
         return self.simulator.contact_forces[:, self.feet_indices, :].view(self.num_envs, -1)
-          
-    
+
+
     def _get_obs_base_lin_vel(self,):
         return self.base_lin_vel
-    
+
     def _get_obs_base_ang_vel(self,):
         return self.base_ang_vel
-    
+
     def _get_obs_projected_gravity(self,):
         return self.projected_gravity
-    
+
     def _get_obs_dof_pos(self,):
         return self.simulator.dof_pos - self.default_dof_pos
-    
+
     def _get_obs_dof_vel(self,):
         return self.simulator.dof_vel
-    
+
     def _get_obs_history(self,):
         assert "history" in self.config.obs.obs_auxiliary.keys()
         history_config = self.config.obs.obs_auxiliary['history']
@@ -893,7 +893,7 @@ class LeggedRobotBase(BaseTask):
             history_tensor = history_tensor.reshape(history_tensor.shape[0], -1)  # Shape: [4096, history_length*obs_dim]
             history_tensors.append(history_tensor)
         return torch.cat(history_tensors, dim=1)
-    
+
     def _get_obs_short_history(self,):
         assert "short_history" in self.config.obs.obs_auxiliary.keys()
         history_config = self.config.obs.obs_auxiliary['short_history']
@@ -905,7 +905,7 @@ class LeggedRobotBase(BaseTask):
             history_tensor = history_tensor.reshape(history_tensor.shape[0], -1)  # Shape: [4096, history_length*obs_dim]
             history_tensors.append(history_tensor)
         return torch.cat(history_tensors, dim=1)
-    
+
     def _get_obs_long_history(self,):
         assert "long_history" in self.config.obs.obs_auxiliary.keys()
         history_config = self.config.obs.obs_auxiliary['long_history']
@@ -917,6 +917,6 @@ class LeggedRobotBase(BaseTask):
             history_tensor = history_tensor.reshape(history_tensor.shape[0], -1)  # Shape: [4096, history_length*obs_dim]
             history_tensors.append(history_tensor)
         return torch.cat(history_tensors, dim=1)
-    
+
     def _get_obs_actions(self,):
         return self.actions

@@ -162,7 +162,7 @@ class IsaacSim(BaseSimulator):
                     "asset_cfg": SceneEntityCfg(
                         "robot",
                         body_names=[
-                            "torso_link",
+                            self.robot_config.torso_name,
                         ],
                     ),
                     "distribution_params": (
