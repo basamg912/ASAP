@@ -57,6 +57,9 @@ class PPO(BaseAlgo):
         self.episode_env_tensors = TensorAverageMeterDict()
         _ = self.env.reset_all()
 
+        # for logging action & observation for delta action policy learning
+        self.actor_state_buffer = {"actions": [], "obs": []}
+
     def _init_config(self):
         # Env related Config
         self.num_envs: int = self.env.config.num_envs
@@ -115,7 +118,7 @@ class PPO(BaseAlgo):
         ## Register obs keys
         for obs_key, obs_dim in self.algo_obs_dim_dict.items():
             self.storage.register_key(obs_key, shape=(obs_dim,), dtype=torch.float)
-        
+
         ## Register others
         self.storage.register_key('actions', shape=(self.num_act,), dtype=torch.float)
         self.storage.register_key('rewards', shape=(1,), dtype=torch.float)
@@ -164,21 +167,21 @@ class PPO(BaseAlgo):
             'iter': self.current_learning_iteration,
             'infos': infos,
         }, path)
-        
+
     def learn(self):
         if self.init_at_random_ep_len:
             self.env.episode_length_buf = torch.randint_like(self.env.episode_length_buf, high=int(self.env.max_episode_length))
-        
+
         obs_dict = self.env.reset_all()
         for obs_key in obs_dict.keys():
             obs_dict[obs_key] = obs_dict[obs_key].to(self.device)
-            
+
         self._train_mode()
 
         num_learning_iterations = self.num_learning_iterations
 
         tot_iter = self.current_learning_iteration + num_learning_iterations
-        
+
         # do not use track, because it will confict with motion loading bar
         # for it in track(range(self.current_learning_iteration, tot_iter), description="Learning Iterations"):
         for it in range(self.current_learning_iteration, tot_iter):
@@ -208,14 +211,14 @@ class PPO(BaseAlgo):
             if it % self.save_interval == 0:
                 self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(it)))
             self.ep_infos.clear()
-        
+
         self.current_learning_iteration += num_learning_iterations
         self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
 
     def _actor_rollout_step(self, obs_dict, policy_state_dict):
         actions = self._actor_act_step(obs_dict)
         policy_state_dict["actions"] = actions
-        
+
         action_mean = self.actor.action_mean.detach()
         action_sigma = self.actor.action_std.detach()
         actions_log_prob = self.actor.get_actions_log_prob(actions).detach().unsqueeze(1)
@@ -282,13 +285,13 @@ class PPO(BaseAlgo):
             self.stop_time = time.time()
             self.collection_time = self.stop_time - self.start_time
             self.start_time = self.stop_time
-            
+
             # prepare data for training
 
             returns, advantages = self._compute_returns(
                 last_obs_dict=obs_dict,
-                policy_state_dict=dict(values=self.storage.query_key('values'), 
-                dones=self.storage.query_key('dones'), 
+                policy_state_dict=dict(values=self.storage.query_key('values'),
+                dones=self.storage.query_key('dones'),
                 rewards=self.storage.query_key('rewards'))
             )
             self.storage.batch_update_data('returns', returns)
@@ -302,15 +305,15 @@ class PPO(BaseAlgo):
 
     def _compute_returns(self, last_obs_dict, policy_state_dict):
         """Compute the returns and advantages for the given policy state.
-        This function calculates the returns and advantages for each step in the 
-        environment based on the provided observations and policy state. It uses 
-        Generalized Advantage Estimation (GAE) to compute the advantages, which 
+        This function calculates the returns and advantages for each step in the
+        environment based on the provided observations and policy state. It uses
+        Generalized Advantage Estimation (GAE) to compute the advantages, which
         helps in reducing the variance of the policy gradient estimates.
         Args:
-            last_obs_dict (dict): The last observation dictionary containing the 
+            last_obs_dict (dict): The last observation dictionary containing the
                       final state of the environment.
-            policy_state_dict (dict): A dictionary containing the policy state 
-                          information, including 'values', 'dones', 
+            policy_state_dict (dict): A dictionary containing the policy state
+                          information, including 'values', 'dones',
                           and 'rewards'.
         Returns:
             tuple: A tuple containing:
@@ -319,20 +322,20 @@ class PPO(BaseAlgo):
         """
         last_values= self.critic.evaluate(last_obs_dict["critic_obs"]).detach()
         advantage = 0
-        
+
         values = policy_state_dict['values']
         dones = policy_state_dict['dones']
         rewards = policy_state_dict['rewards']
-        
+
         last_values = last_values.to(self.device)
         values = values.to(self.device)
         dones = dones.to(self.device)
         rewards = rewards.to(self.device)
-        
+
         returns = torch.zeros_like(values)
-        
+
         num_steps = returns.shape[0]
-        
+
         for step in reversed(range(num_steps)):
             if step == num_steps - 1:
                 next_values = last_values
@@ -347,7 +350,7 @@ class PPO(BaseAlgo):
         advantages = returns - values
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         return returns, advantages
-    
+
     def _training_step(self):
         loss_dict = self._init_loss_dict_at_training_step()
 
@@ -364,24 +367,24 @@ class PPO(BaseAlgo):
             loss_dict[key] /= num_updates
         self.storage.clear()
         return loss_dict
-    
+
     def _init_loss_dict_at_training_step(self):
         loss_dict = {}
         loss_dict['Value'] = 0
         loss_dict['Surrogate'] = 0
         loss_dict['Entropy'] = 0
         return loss_dict
-    
+
     def _update_algo_step(self, policy_state_dict, loss_dict):
         loss_dict = self._update_ppo(policy_state_dict, loss_dict)
         return loss_dict
 
     def _actor_act_step(self, obs_dict):
         return self.actor.act(obs_dict["actor_obs"])
-    
+
     def _critic_eval_step(self, obs_dict):
         return self.critic.evaluate(obs_dict["critic_obs"])
-    
+
     def _update_ppo(self, policy_state_dict, loss_dict):
         actions_batch = policy_state_dict['actions']
         target_values_batch = policy_state_dict['values']
@@ -436,12 +439,12 @@ class PPO(BaseAlgo):
 
         entropy_loss = entropy_batch.mean()
         actor_loss = surrogate_loss - self.entropy_coef * entropy_loss
-        
+
         critic_loss = self.value_loss_coef * value_loss
 
         self.actor_optimizer.zero_grad()
         self.critic_optimizer.zero_grad()
-        
+
         # print("skip backward")
         actor_loss.backward()
         critic_loss.backward()
@@ -596,6 +599,10 @@ class PPO(BaseAlgo):
             actor_state = self.env_step(actor_state)
             actor_state = self._post_eval_env_step(actor_state)
             step += 1
+            # logging action & observation for delta action policy learning
+            self.actor_state_buffer["actions"].append(actor_state["actions"])
+            self.actor_state_buffer["obs"].append(actor_state["obs"])
+
         self._post_evaluate_policy()
 
     def _create_actor_state(self):
