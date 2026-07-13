@@ -72,6 +72,9 @@ def main(override_config: OmegaConf):
         args_cli.env_spacing = config.env.config.env_spacing
         args_cli.output_dir = config.output_dir
         args_cli.headless = config.headless
+        # offscreen rendering is required to capture frames while headless
+        if config.get("save_video", False):
+            args_cli.enable_cameras = True
 
         app_launcher = AppLauncher(args_cli)
         simulation_app = app_launcher.app
@@ -106,6 +109,25 @@ def main(override_config: OmegaConf):
     )
     config.env.config.ckpt_dir = str(checkpoint.parent)
     env = instantiate(config.env, device=device)
+
+    # ------------------------------------------------------------------
+    # Video recording (IsaacSim only): +save_video=True [+video_resolution=[1280,720]]
+    # ------------------------------------------------------------------
+    save_video = bool(config.get("save_video", False)) and simulator_type == "IsaacSim"
+    rgb_annotator = None
+    video_frames = []
+    if save_video:
+        import omni.replicator.core as rep
+
+        resolution = tuple(config.get("video_resolution", (1280, 720)))
+        render_product = rep.create.render_product(
+            "/OmniverseKit_Persp", resolution=resolution
+        )
+        rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
+        rgb_annotator.attach([render_product])
+        # camera follows the robot root; offset relative to the robot (override: +camera_offset=[2.0,-2.0,1.0])
+        camera_offset = tuple(config.get("camera_offset", (2.0, -2.0, 1.0)))
+        logger.info(f"Recording video at {resolution} from the viewport camera")
 
     algo: BaseAlgo = instantiate(config.algo, env=env, device=device, log_dir=None)
     algo.setup()
@@ -143,6 +165,19 @@ def main(override_config: OmegaConf):
 
             done_buffer.append(actor_state["dones"].detach().cpu().clone())
 
+            if save_video:
+                root_pos = env.simulator.robot_root_states[0, :3].detach().cpu().tolist()
+                env.simulator.sim.set_camera_view(
+                    eye=[root_pos[i] + camera_offset[i] for i in range(3)],
+                    target=root_pos,
+                )
+                # headless render is skipped unless has_rtx_sensors(), which a
+                # replicator render product does not set — render explicitly
+                env.simulator.sim.render()
+                frame = rgb_annotator.get_data()
+                if frame is not None and frame.size > 0:
+                    video_frames.append(frame[..., :3].copy())
+
             if (step + 1) % 100 == 0:
                 logger.info(f"step {step + 1}/{num_collect_steps}")
 
@@ -164,6 +199,15 @@ def main(override_config: OmegaConf):
         f"actions shape: {data['actions'].shape}, "
         + ", ".join(f"obs[{k}]: {tuple(v.shape)}" for k, v in data["obs"].items())
     )
+
+    if save_video and video_frames:
+        import imageio
+
+        sim_cfg = config.simulator.config.sim
+        fps = int(sim_cfg.fps / sim_cfg.control_decimation)
+        video_path = save_dir / f"deploy_video_ckpt_{ckpt_num}.mp4"
+        imageio.mimwrite(video_path, video_frames, fps=fps, quality=8)
+        logger.info(f"Saved video ({len(video_frames)} frames @ {fps} fps) to {video_path}")
 
     if simulator_type == "IsaacSim":
         simulation_app.close()

@@ -14,7 +14,7 @@ rewards:
       penalty_ang_vel_xy: -1.0
       penalty_orientation: -1.0
       penalty_torques: -0.00001
-      # penalty_dof_vel: -0.0001
+      penalty_dof_vel: -0.0001
       penalty_dof_acc: -3.5e-8
       penalty_action_rate: -0.01
       # penalty_feet_contact_forces: -0.01
@@ -22,12 +22,12 @@ rewards:
       # penalty_slippage: -1.0
       penalty_feet_ori: -2.0
       limits_dof_pos: -10.0
-      # limits_dof_vel: -5.0
-      # limits_torque: -0.1
+      limits_dof_vel: -5.0
+      limits_torque: -0.1
       feet_air_time: 1.0
       base_height: -100.0
       penalty_feet_height: -5.
-      # termination: -500.0
+      termination: -500.0
       # penalty_in_the_air: -100.0
       # feet_max_height_for_this_air: -100.0
 
@@ -95,4 +95,6 @@ rewards:
     "limits_torque",
     "termination",
     "feet_air_time",
-    "feet_max_height_for_this_air"]
+    "feet_max_height_for_this_air",
+    "base_height",
+    "penalty_feet_height"]

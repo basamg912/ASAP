@@ -135,7 +135,13 @@ def main(override_config: OmegaConf):
         args_cli.env_spacing = config.env.config.env_spacing
         args_cli.output_dir = config.output_dir
         args_cli.headless = config.headless
-
+        args_cli.video = config.video
+        if args_cli.video:
+            args_cli.enable_cameras = True
+            args_cli.video_length = config.video_length
+        # offscreen rendering is required to capture frames while headless
+        if config.get("save_video", False):
+            args_cli.enable_cameras = True
         app_launcher = AppLauncher(args_cli)
         simulation_app = app_launcher.app
     if simulator_type == "IsaacGym":
@@ -175,13 +181,71 @@ def main(override_config: OmegaConf):
     env = instantiate(config.env, device=device)
 
     # Start a thread to listen for key press
-    key_listener_thread = threading.Thread(target=listen_for_keypress, args=(env,))
-    key_listener_thread.daemon = True
-    key_listener_thread.start()
+    if keyboard is not None:
+        key_listener_thread = threading.Thread(target=listen_for_keypress, args=(env,))
+        key_listener_thread.daemon = True
+        key_listener_thread.start()
 
     algo: BaseAlgo = instantiate(config.algo, env=env, device=device, log_dir=None)
     algo.setup()
     algo.load(config.checkpoint)
+
+    # ------------------------------------------------------------------
+    # Video recording (IsaacSim only): +save_video=True [+video_resolution=[1280,720]]
+    # evaluate_policy() loops forever, so frames are streamed to the mp4
+    # every step and the writer is closed at process exit (Ctrl+C included).
+    # ------------------------------------------------------------------
+    if config.get("save_video", False) and simulator_type == "IsaacSim":
+        import atexit
+
+        import imageio
+        import omni.replicator.core as rep
+
+        resolution = tuple(config.get("video_resolution", (1280, 720)))
+        render_product = rep.create.render_product(
+            "/OmniverseKit_Persp", resolution=resolution
+        )
+        rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
+        rgb_annotator.attach([render_product])
+
+        sim_cfg = config.simulator.config.sim
+        fps = int(sim_cfg.fps / sim_cfg.control_decimation)
+        video_path = eval_log_dir / f"eval_video_ckpt_{ckpt_num}.mp4"
+        video_writer = imageio.get_writer(video_path, fps=fps, quality=8)
+        atexit.register(video_writer.close)
+        logger.info(f"Recording video at {resolution} @ {fps} fps to {video_path}")
+
+        # camera follows the robot root; offset relative to the robot (override: +camera_offset=[2.0,-2.0,1.0])
+        camera_offset = tuple(config.get("camera_offset", (2.0, -2.0, 1.0)))
+
+        orig_env_step = algo.env_step
+        frame_count = [0]
+        step_count = [0]
+
+        def env_step_with_capture(actor_state):
+            if step_count[0] == 0:
+                logger.info("Entered first env_step (sim stepping OK, waiting on first render...)")
+            actor_state = orig_env_step(actor_state)
+            step_count[0] += 1
+            root_pos = env.simulator.robot_root_states[0, :3].detach().cpu().tolist()
+            env.simulator.sim.set_camera_view(
+                eye=[root_pos[i] + camera_offset[i] for i in range(3)],
+                target=root_pos,
+            )
+            # headless render is skipped unless has_rtx_sensors(), which a
+            # replicator render product does not set — render explicitly
+            env.simulator.sim.render()
+            frame = rgb_annotator.get_data()
+            if frame is not None and frame.size > 0:
+                video_writer.append_data(frame[..., :3])
+                frame_count[0] += 1
+                if frame_count[0] == 1:
+                    logger.info("First video frame captured")
+            if step_count[0] % 100 == 0:
+                logger.info(f"steps: {step_count[0]}, video frames: {frame_count[0]}")
+            return actor_state
+
+        algo.env_step = env_step_with_capture
 
     EXPORT_POLICY = False
     EXPORT_ONNX = True
@@ -225,6 +289,7 @@ def main(override_config: OmegaConf):
         # export_policy_and_estimator_as_onnx(algo.inference_model, exported_policy_path, exported_onnx_name, example_obs_dict)
         logger.info(f'Exported policy as onnx to: {os.path.join(exported_policy_path, exported_onnx_name)}')
 
+    logger.info("Starting evaluate_policy (resetting envs, then stepping)...")
     algo.evaluate_policy()
 
 
