@@ -602,7 +602,7 @@ class PPO(BaseAlgo):
             # logging action & observation for delta action policy learning
             self.actor_state_buffer["actions"].append(actor_state["actions"])
             self.actor_state_buffer["obs"].append(actor_state["obs"])
-
+        print(self.actor_state_buffer)
         self._post_evaluate_policy()
 
     def _create_actor_state(self):

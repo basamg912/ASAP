@@ -26,14 +26,14 @@ class BaseTask():
         # self.simulator = instantiate(config=self.config.simulator, device=device)
         SimulatorClass = get_class(self.config.simulator._target_)
         self.simulator: BaseSimulator = SimulatorClass(config=self.config, device=device)
-        
+
         self.headless = config.headless
         self.simulator.set_headless(self.headless)
         self.simulator.setup()
         self.device = self.simulator.sim_device
         self.sim_dt = self.simulator.sim_dt
         self.up_axis_idx = 2 # Jiawei: HARD CODE FOR NOW
-        
+
         self.dt = self.config.simulator.config.sim.control_decimation * self.sim_dt
         self.max_episode_length_s = self.config.max_episode_length_s
         self.max_episode_length = np.ceil(self.max_episode_length_s / self.dt)
@@ -94,12 +94,17 @@ class BaseTask():
         self.simulator.set_actor_root_state_tensor(torch.arange(self.num_envs, device=self.device), self.simulator.all_root_states)
         self.simulator.set_dof_state_tensor(torch.arange(self.num_envs, device=self.device), self.simulator.dof_state)
         # self._refresh_env_idx_tensors(torch.arange(self.num_envs, device=self.device))
-        actions = torch.zeros(self.num_envs, self.dim_actions, device=self.device, requires_grad=False)
+
+        # set action not zero for stabilize - sybae
+        # actions = torch.zeros(self.num_envs, self.dim_actions, device=self.device, requires_grad=False)
+        actions = (self.simulator.dof_pos - self.default_dof_pos) / self.config.robot.control.action_scale
+        actions = actions.clip(-self.config.robot.control.action_clip_value, self.config.robot.control.action_clip_value)
+
         actor_state = {}
         actor_state["actions"] = actions
         obs_dict, _, _, _ = self.step(actor_state)
         return obs_dict
-    
+
     # def _refresh_env_idx_tensors(self, env_ids):
     #     env_ids_int32 = env_ids.to(dtype=torch.int32)
     #     self.gym.set_actor_root_state_tensor_indexed(self.sim,
@@ -108,7 +113,7 @@ class BaseTask():
     #     self.gym.set_dof_state_tensor_indexed(self.sim,
     #                                             gymtorch.unwrap_tensor(self.dof_state),
     #                                             gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
-    
+
     def render(self, sync_frame_time=True):
         if self.viewer:
             self.simulator.render(sync_frame_time)
@@ -133,7 +138,7 @@ class BaseTask():
             if isinstance(self.simulator.terrain.env_origins, np.ndarray):
                 self.terrain_origins = torch.from_numpy(self.simulator.terrain.env_origins).to(self.device).to(torch.float)
             else:
-                self.terrain_origins = self.simulator.terrain.env_origins.to(self.device).to(torch.float)   
+                self.terrain_origins = self.simulator.terrain.env_origins.to(self.device).to(torch.float)
             self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.terrain_types]
             # import ipdb; ipdb.set_trace()
             # print(self.terrain_origins.shape)
@@ -153,7 +158,7 @@ class BaseTask():
 
         self.simulator.load_assets()
         self.num_dof, self.num_bodies, self.dof_names, self.body_names = self.simulator.num_dof, self.simulator.num_bodies, self.simulator.dof_names, self.simulator.body_names
-        
+
         # check dimensions
         assert self.num_dof == self.dim_actions, "Number of DOFs must be equal to number of actions"
 
@@ -167,14 +172,14 @@ class BaseTask():
         """ Creates environments:
              1. loads the robot URDF/MJCF asset,
              2. For each environment
-                2.1 creates the environment, 
+                2.1 creates the environment,
                 2.2 calls DOF and Rigid shape properties callbacks,
                 2.3 create actor with these properties and add them to the env
              3. Store indices of different bodies of the robot
         """
         # env_config = self.config
-        self.simulator.create_envs(self.num_envs, 
-                                    self.env_origins, 
+        self.simulator.create_envs(self.num_envs,
+                                    self.env_origins,
                                     self.base_init_state)
 
     def _setup_robot_body_indices(self):
@@ -190,20 +195,20 @@ class BaseTask():
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
             self.feet_indices[i] = self.simulator.find_rigid_body_indice(feet_names[i])
-        
+
         self.knee_indices = torch.zeros(len(knee_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(knee_names)):
             self.knee_indices[i] = self.simulator.find_rigid_body_indice(knee_names[i])
 
         self.penalised_contact_indices = torch.zeros(len(penalized_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(penalized_contact_names)):
-            
+
             self.penalised_contact_indices[i] = self.simulator.find_rigid_body_indice(penalized_contact_names[i])
 
         self.termination_contact_indices = torch.zeros(len(termination_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.simulator.find_rigid_body_indice(termination_contact_names[i])
-            
+
         if self.config.robot.has_upper_body_dof:
             # maintain upper/lower dof idxs
             self.upper_dof_names = self.config.robot.upper_dof_names

@@ -18,7 +18,11 @@ from humanoidverse.utils.logging import HydraLoggerBridge
 
 # from pynput import keyboard
 
-def on_press(key, env):
+try:
+    from pynput import keyboard
+except ImportError:
+    logger.warning("pynput not installed. Keyboard input will not be available.")
+    keyboard = None
 
 def on_press(key, env):
     try:
