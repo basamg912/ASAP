@@ -8,8 +8,8 @@ rewards:
   set_reward_date: 20260710
   only_positive_rewards: False
   reward_scales:
-      tracking_lin_vel: 1.0
-      tracking_ang_vel: 0.5
+      tracking_lin_vel: 2.0
+      tracking_ang_vel: 1.0
       penalty_lin_vel_z: -2.0
       penalty_ang_vel_xy: -1.0
       penalty_orientation: -1.0
@@ -27,7 +27,11 @@ rewards:
       feet_air_time: 1.0
       base_height: -100.0
       penalty_feet_height: -5.
-      termination: -500.0
+      termination: -200.0
+      # 팔(어깨~손목) 관절이 default pose에서 벗어나면 벌점 — 팔 발산 방지
+      upperbody_joint_angle_freeze: -0.2
+      # hip roll/yaw 벌점 — 다리 벌리고 버티는 자세 방지
+      penalty_hip_pos: -1.0
       # penalty_in_the_air: -100.0
       # feet_max_height_for_this_air: -100.0
 
@@ -94,7 +98,7 @@ rewards:
     "limits_dof_vel",
     "limits_torque",
     "termination",
-    "feet_air_time",
     "feet_max_height_for_this_air",
     "base_height",
-    "penalty_feet_height"]
+    "penalty_feet_height",
+    "penalty_hip_pos"]
