@@ -1,7 +1,11 @@
 '''
 Usage
-python ASAP/humanoidverse/deploy_agent.py +simulator=isaacsim num_envs=1 headless=True +num_collect_steps=2000 +collect_save_dir=motionData +checkpoint=
+MUJOCO_GL=egl python humanoidverse/deploy_agent.py +simulator=isaacsim     +checkpoint=logs/MotionTracking/20260713_kapex_walkmotion_tracking/model_26100.pt     +opt=record env.config.save_motion=True env.config.save_note=kapex_walk
 
+robot.motion.motion_file 이 디렉토리면 안의 모든 모션(.pkl)을 순회하며
+모션당 +runs_per_motion(기본 2)회 rollout 을 수집하고,
+각 rollout 을 <모션이름>_run<n>.pt / <모션이름>_run<n>.mp4 쌍으로 저장한다.
+비디오는 수집한 qpos 를 mujoco 오프스크린 렌더링으로 생성 (헤드리스는 MUJOCO_GL=egl).
 '''
 import logging
 import os
@@ -18,6 +22,65 @@ from utils.config_utils import *  # noqa: E402, F403
 
 from humanoidverse.utils.config_utils import *  # noqa: E402, F403
 from humanoidverse.utils.logging import HydraLoggerBridge
+
+
+def render_qpos_video(
+    mjcf_path, qpos_frames, dof_names, fps, out_path, width=720, height=480
+):
+    """Offscreen-render collected robot states (root pos+quat wxyz, dof) to mp4.
+
+    Headless 환경에서는 MUJOCO_GL=egl 필요.
+    """
+    import mujoco
+    import numpy as np
+
+    model = mujoco.MjModel.from_xml_path(str(mjcf_path))
+    mjdata = mujoco.MjData(model)
+
+    # MJCF offscreen framebuffer 한도 내로 렌더 크기 클램프
+    width = min(width, model.vis.global_.offwidth)
+    height = min(height, model.vis.global_.offheight)
+
+    has_free_joint = model.njnt > 0 and model.jnt_type[0] == mujoco.mjtJoint.mjJNT_FREE
+    dof_qposadr = []
+    for name in dof_names:
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        if jid < 0:
+            raise ValueError(f"joint '{name}' not found in {mjcf_path}")
+        dof_qposadr.append(model.jnt_qposadr[jid])
+    dof_qposadr = np.array(dof_qposadr)
+
+    cam = mujoco.MjvCamera()
+    mujoco.mjv_defaultCamera(cam)
+    cam.distance = 3.0
+    cam.elevation = -15.0
+    cam.azimuth = 135.0
+
+    frames = []
+    with mujoco.Renderer(model, height=height, width=width) as renderer:
+        for qpos in qpos_frames:
+            if has_free_joint:
+                mjdata.qpos[:7] = qpos[:7]
+            mjdata.qpos[dof_qposadr] = qpos[7:]
+            mujoco.mj_forward(model, mjdata)
+            cam.lookat[:] = qpos[:3]  # follow the root
+            renderer.update_scene(mjdata, camera=cam)
+            frames.append(renderer.render())
+
+    try:
+        import imageio
+
+        imageio.mimsave(str(out_path), frames, fps=fps)
+    except ImportError:
+        import cv2
+
+        h, w = frames[0].shape[:2]
+        writer = cv2.VideoWriter(
+            str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h)
+        )
+        for f in frames:
+            writer.write(cv2.cvtColor(f, cv2.COLOR_RGB2BGR))
+        writer.release()
 
 
 @hydra.main(config_path="config", config_name="base_eval")
@@ -92,8 +155,9 @@ def main(override_config: OmegaConf):
     else:
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-    # collection settings (override on CLI: +num_collect_steps=2000 +collect_save_dir=motionData)
-    num_collect_steps = int(config.get("num_collect_steps", 1000))
+    # collection settings (override on CLI: +num_collect_steps=2000 +collect_save_dir=motionData +runs_per_motion=2)
+    num_collect_steps = int(config.get("num_collect_steps", 1000))  # per-rollout step cap
+    runs_per_motion = int(config.get("runs_per_motion", 2))
     save_dir = Path(config.get("collect_save_dir", "motionData"))
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -134,36 +198,54 @@ def main(override_config: OmegaConf):
     algo.load(config.checkpoint)
 
     # ------------------------------------------------------------------
-    # Rollout: run the trained policy and record observations & actions
+    # Rollout: iterate motions, run the policy runs_per_motion times each,
+    # and save (obs/act data, mujoco-rendered video) pairs per rollout
     # ------------------------------------------------------------------
+    if env.num_envs != 1:
+        logger.warning(
+            f"num_envs={env.num_envs}: per-motion collection assumes num_envs=1; "
+            "each load_motions(start_idx) call assigns consecutive motions to envs."
+        )
+
     algo._create_eval_callbacks()
     algo._pre_evaluate_policy()
     algo.eval_policy = algo._get_inference_policy()
 
-    actor_state = algo._create_actor_state()
-    obs_dict = env.reset_all()
-    init_actions = torch.zeros(env.num_envs, algo.num_act, device=device)
-    actor_state.update({"obs": obs_dict, "actions": init_actions})
+    # MJCF for offscreen video rendering of collected qpos
+    mjcf_path = (
+        Path(config.robot.motion.asset.assetRoot)
+        / config.robot.motion.asset.assetFileName
+    )
+    dof_names = list(config.robot.dof_names)
+    render_fps = round(1.0 / env.dt)
 
-    obs_buffer = {k: [] for k in obs_dict.keys()}
-    act_buffer = []
-    done_buffer = []
+    num_motions = env.num_motions
+    # keys can be full paths when motion_file is a directory — keep only the stem
+    motion_keys = [Path(str(k)).stem for k in env._motion_lib._motion_data_keys]
+    logger.info(
+        f"Collecting {runs_per_motion} rollouts x {num_motions} motions "
+        f"(per-rollout step cap: {num_collect_steps})"
+    )
 
-    logger.info(f"Collecting {num_collect_steps} steps from {env.num_envs} envs")
-    with torch.no_grad():
-        for step in range(num_collect_steps):
-            actor_state["step"] = step
-            actor_state = algo._pre_eval_env_step(actor_state)
+    def rollout():
+        """Run one episode until done (or step cap); return buffers."""
+        actor_state = algo._create_actor_state()
+        obs_dict = env.reset_all()
+        init_actions = torch.zeros(env.num_envs, algo.num_act, device=device)
+        actor_state.update({"obs": obs_dict, "actions": init_actions})
 
-            # record the observation the policy acted on, and its action
-            for k in obs_buffer:
-                obs_buffer[k].append(actor_state["obs"][k].detach().cpu().clone())
-            act_buffer.append(actor_state["actions"].detach().cpu().clone())
+        obs_buffer = {k: [] for k in obs_dict.keys()}
+        act_buffer, done_buffer, qpos_buffer = [], [], []
 
-            actor_state = algo.env_step(actor_state)
-            actor_state = algo._post_eval_env_step(actor_state)
+        with torch.no_grad():
+            for step in range(num_collect_steps):
+                actor_state["step"] = step
+                actor_state = algo._pre_eval_env_step(actor_state)
 
-            done_buffer.append(actor_state["dones"].detach().cpu().clone())
+                # record the observation the policy acted on, and its action
+                for k in obs_buffer:
+                    obs_buffer[k].append(actor_state["obs"][k].detach().cpu().clone())
+                act_buffer.append(actor_state["actions"].detach().cpu().clone())
 
             if save_video:
                 root_pos = env.simulator.robot_root_states[0, :3].detach().cpu().tolist()

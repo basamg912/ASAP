@@ -550,7 +550,10 @@ class IsaacSim(BaseSimulator):
         # call super
         super().set_headless(headless)
         if not self.headless:
-            from isaaclab.debug_draw import _debug_draw
+            try:
+                from isaacsim.util.debug_draw import _debug_draw  # Isaac Sim 5.x
+            except ModuleNotFoundError:
+                from omni.isaac.debug_draw import _debug_draw  # Isaac Sim 4.x
 
             self.draw = _debug_draw.acquire_debug_draw_interface()
         else:

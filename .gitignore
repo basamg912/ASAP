@@ -1,7 +1,7 @@
 **/kapex/**
 humanoidverse/data/motions
 ckpt
-
+motionData/
 # Compiled Python bytecode
 *.py[cod]
 # Log files
