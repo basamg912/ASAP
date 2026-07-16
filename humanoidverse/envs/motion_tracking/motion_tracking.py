@@ -414,6 +414,8 @@ class LeggedRobotMotionTracking(LeggedRobotBase):
             elif self.config.simulator.config.name == 'genesis':
                 self.simulator.robot_root_states[env_ids, 3:7] = motion_res['root_rot'][env_ids]
                 raise NotImplementedError
+            elif self.config.simulator.config.name == 'mujoco':
+                self.simulator.robot_root_states[env_ids, 3:7] = motion_res['root_rot'][env_ids]  # xyzw
             self.simulator.robot_root_states[env_ids, 7:10] = motion_res['root_vel'][env_ids]
             self.simulator.robot_root_states[env_ids, 10:13] = motion_res['root_ang_vel'][env_ids]
             
@@ -518,6 +520,8 @@ class LeggedRobotMotionTracking(LeggedRobotBase):
                 root_rot = self.simulator.robot_root_states[:, [4, 5, 6, 3]].cpu() # wxyz to xyzw   
             elif self.config.simulator.config.name == "genesis":
                 root_rot = self.simulator.robot_root_states[:,  3:7].cpu() # xyzw
+            elif self.config.simulator.config.name == "mujoco":
+                root_rot = self.simulator.robot_root_states[:, 3:7].cpu() # xyzw
             else:
                 raise NotImplementedError
             root_rot_vec = torch.from_numpy(sRot.from_quat(root_rot.numpy()).as_rotvec()).float()
@@ -643,7 +647,8 @@ class LeggedRobotMotionTracking(LeggedRobotBase):
             num_visualize_markers = len(self.config.robot.motion.visualization.marker_joint_colors)
             self.simulator.add_visualize_entities(num_visualize_markers)
         elif self.debug_viz and self.config.simulator.config.name == "mujoco":
-            num_visualize_markers = len(self.config.robot.motion.visualization.marker_joint_colors)
+            viz_cfg = self.config.robot.motion.visualization
+            num_visualize_markers = len(viz_cfg.marker_joint_colors) if "marker_joint_colors" in viz_cfg else 0
             self.simulator.add_visualize_entities(num_visualize_markers)
         else:
             pass

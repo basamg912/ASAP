@@ -15,9 +15,10 @@ simulator:
       fps: 200
       control_decimation: 4
       substeps: 1
+      realtime_factor: 1.0 # 뷰어 재생 배속: 1.0=실시간, 0.5=절반 속도 슬로모션 (물리에는 무영향)
       render_mode: "human" # [None, "human", "rgb_array"]
       render_interval: 1
-    
+
     scene:
       num_envs: ${num_envs}
       env_spacing: ${env.config.env_spacing}
