@@ -134,7 +134,10 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.commands = torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
         # TODO: haotian: adding command configuration
         if command is not None:
-            self.commands[:, :3] = torch.tensor(command).to(self.device)  # only set the first 3 commands
+            # [vx, vy, yaw] 또는 [vx, vy, yaw, heading] — yaw는 매 스텝 heading 오차로
+            # 덮어써지므로, 회전을 원하면 4번째 heading 값으로 지정해야 함
+            command = torch.tensor(command, dtype=torch.float32, device=self.device)
+            self.commands[:, : len(command)] = command
 
     ########################### TRACKING REWARDS ###########################
 

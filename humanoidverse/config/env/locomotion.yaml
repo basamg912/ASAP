@@ -34,7 +34,7 @@ env:
       # termination_max_base_ang_vel : 5.0
       termination_gravity_x : 0.8
       termination_gravity_y : 0.8
-      
+
 
 
 # Globally accessible parameters
@@ -42,5 +42,5 @@ log_task_name: locomotion
 
 eval_overrides:
   env:
-    config: 
+    config:
       max_episode_length_s: 100000

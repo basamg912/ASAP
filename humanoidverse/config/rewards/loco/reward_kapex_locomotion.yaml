@@ -2,7 +2,10 @@
 
 # defaults:
 #   - reward_base
-
+env:
+    config:
+        termination_scales:
+            termination_min_base_height: 0.40
 rewards:
   set_reward: Sangyun Bae (reference h1 reward)
   set_reward_date: 20260710
@@ -19,14 +22,14 @@ rewards:
       penalty_action_rate: -0.01
       # penalty_feet_contact_forces: -0.01
       # penalty_stumble: -10.0
-      # penalty_slippage: -1.0
+      penalty_slippage: -1.0
       penalty_feet_ori: -2.0
       limits_dof_pos: -10.0
       limits_dof_vel: -5.0
       limits_torque: -0.1
       feet_air_time: 1.0
-      base_height: -100.0
-      penalty_feet_height: -5.
+      base_height: -50.0
+      penalty_feet_height: -3.
       termination: -200.0
       # 팔(어깨~손목) 관절이 default pose에서 벗어나면 벌점 — 팔 발산 방지
       upperbody_joint_angle_freeze: -0.2
@@ -70,13 +73,13 @@ rewards:
       soft_torque_curriculum_degree: 0.00000025
       soft_torque_curriculum_level_down_threshold: 40
       soft_torque_curriculum_level_up_threshold: 42
-  feet_height_target: 0.18
-  locomotion_max_contact_force: 200.0
+  feet_height_target: 0.2
+  locomotion_max_contact_force: 350.0
   desired_feet_max_height_for_this_air: 0.2
   desired_base_height: 0.91
 
   reward_penalty_curriculum: True # for train stability - sybae
-  reward_initial_penalty_scale : 0.1
+  reward_initial_penalty_scale : 0.8
   reward_min_penalty_scale: 0.0
   reward_max_penalty_scale: 1.0
   reward_penalty_level_down_threshold: 400
@@ -97,7 +100,7 @@ rewards:
     "limits_dof_pos",
     "limits_dof_vel",
     "limits_torque",
-    "termination",
+    # "termination",
     "feet_max_height_for_this_air",
     "base_height",
     "penalty_feet_height",

@@ -9,9 +9,9 @@ domain_rand:
   # base com
   randomize_base_com : True
   base_com_range:
-    x : [-0.1, 0.1]
-    y : [-0.1, 0.1]
-    z : [-0.1, 0.1]
+    x : [-0.05, 0.05]
+    y : [-0.05, 0.05]
+    z : [-0.05, 0.05]
 
   # link mass
   randomize_link_mass : True

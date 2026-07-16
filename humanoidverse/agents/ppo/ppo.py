@@ -594,6 +594,12 @@ class PPO(BaseAlgo):
         actor_state.update({"obs": obs_dict, "actions": init_actions})
         actor_state = self._pre_eval_env_step(actor_state)
         while True:
+            # 키보드 리스너 스레드가 세운 플래그를 메인 스레드에서 처리
+            # (IsaacSim app.update()는 메인 스레드에서만 호출 가능)
+            if getattr(self.env, "next_task_requested", False):
+                self.env.next_task_requested = False
+                self.env.next_task()
+                logger.info("Moved to the next task.")
             actor_state["step"] = step
             actor_state = self._pre_eval_env_step(actor_state)
             actor_state = self.env_step(actor_state)
@@ -615,7 +621,12 @@ class PPO(BaseAlgo):
 
     def _pre_evaluate_policy(self, reset_env=True):
         self._eval_mode()
-        self.env.set_is_evaluating()
+        eval_command = self.config.get("eval_command", None)
+        if eval_command is not None:
+            # locomotion eval에서 고정 커맨드 지정: +algo.config.eval_command=[vx,vy,yaw,heading]
+            self.env.set_is_evaluating(command=list(eval_command))
+        else:
+            self.env.set_is_evaluating()
         if reset_env:
             _ = self.env.reset_all()
 

@@ -772,6 +772,14 @@ class LeggedRobotBase(BaseTask):
         left_gravity = quat_rotate_inverse(left_quat, self.gravity_vec)
         right_quat = self.simulator._rigid_body_rot[:, self.feet_indices[1]]
         right_gravity = quat_rotate_inverse(right_quat, self.gravity_vec)
+        # 발 링크 프레임 z축이 발바닥 법선이 아닌 로봇(예: KAPEX, 발목 조인트
+        # origin에 회전 오프셋)은 config에 "발바닥이 평평할 때 발 프레임에서 본
+        # 중력 벡터"를 지정 — 그 벡터로부터의 편차를 페널티로 사용
+        flat_gravity = self.config.robot.get("feet_flat_local_gravity", None)
+        if flat_gravity is not None:
+            target = torch.tensor(list(flat_gravity), dtype=torch.float32, device=self.device)
+            return (torch.norm(left_gravity - target, dim=1)
+                    + torch.norm(right_gravity - target, dim=1))
         return torch.sum(torch.square(left_gravity[:, :2]), dim=1)**0.5 + torch.sum(torch.square(right_gravity[:, :2]), dim=1)**0.5
 
     def _episodic_domain_randomization(self, env_ids):

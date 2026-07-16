@@ -27,8 +27,11 @@ except ImportError:
 def on_press(key, env):
     try:
         if key.char == "n":
-            env.next_task()
-            logger.info("Moved to the next task.")
+            # 리스너 스레드에서 next_task()를 직접 부르면 IsaacSim 렌더가
+            # 메인 스레드 밖에서 호출되어 RuntimeError가 남 — 플래그만 세우고
+            # 실제 전환은 평가 루프(ppo.evaluate_policy)가 수행
+            env.next_task_requested = True
+            logger.info("Next task requested (will switch on next step).")
         # Force Control
         # Force Control
         if hasattr(key, "char"):
