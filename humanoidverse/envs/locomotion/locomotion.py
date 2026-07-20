@@ -123,6 +123,18 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         # set small commands to zero
         self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
 
+        # 일부 env 에 명시적 standstill(정지) 커맨드를 배정 — 랜덤 속도만으로는
+        # 정지 명령(norm<0.2)이 ~3%만 나와 정책이 "가만히 서있기"를 거의 못 배움.
+        # standstill: lin vel 0 + 목표 heading = 현재 heading (yaw command ≈ 0 → 회전도 없음)
+        stand_prob = self.config.get("locomotion_stand_still_prob", 0.0)
+        if stand_prob > 0.0:
+            stand_mask = torch.rand(len(env_ids), device=self.device) < stand_prob
+            if stand_mask.any():
+                stand_ids = env_ids[stand_mask]
+                self.commands[stand_ids, :2] = 0.0
+                forward = quat_apply(self.base_quat[stand_ids], self.forward_vec[stand_ids])
+                self.commands[stand_ids, 3] = torch.atan2(forward[:, 1], forward[:, 0])
+
 
     def _reset_tasks_callback(self, env_ids):
         super()._reset_tasks_callback(env_ids)
@@ -266,6 +278,27 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         hips_roll_yaw_indices = self.hips_dof_id[1:3] + self.hips_dof_id[4:6]
         hip_pos = self.simulator.dof_pos[:, hips_roll_yaw_indices]
         return torch.sum(torch.square(hip_pos), dim=1)
+
+    def _reward_penalty_torso_ori(self):
+        # 몸통(torso_name 링크)이 직립에서 기울어지면 벌점.
+        # KAPEX WL3는 직립 시 프레임 z축이 월드 +y를 향하므로(z-up 아님)
+        # config의 기준 로컬 중력 벡터(torso_upright_local_gravity)와의 편차로 판정
+        torso_quat = self.simulator._rigid_body_rot[:, self.torso_index]
+        torso_gravity = quat_rotate_inverse(torso_quat, self.gravity_vec)
+        target = torch.tensor(
+            list(self.config.rewards.get("torso_upright_local_gravity", [0.0, 0.0, -1.0])),
+            dtype=torch.float32, device=self.device)
+        return torch.norm(torso_gravity - target, dim=1)
+
+    def _reward_penalty_stand_still(self):
+        # zero command에서 발을 떼거나 움직이면 벌점 — 제자리 gait 스테핑 방지
+        zero_cmd = (torch.norm(self.commands[:, :2], dim=1) < 0.1) \
+            & (torch.abs(self.commands[:, 2]) < 0.1)
+        contact = self.simulator.contact_forces[:, self.feet_indices, 2] > 1.
+        feet_off_ground = (~contact).sum(dim=1).float()
+        feet_xy_vel = torch.norm(
+            self.simulator._rigid_body_vel[:, self.feet_indices, :2], dim=-1).sum(dim=1)
+        return (feet_off_ground + feet_xy_vel) * zero_cmd
     
     ########################### GAIT REWARDS ###########################
     def _calc_phase_time(self):

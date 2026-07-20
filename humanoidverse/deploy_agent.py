@@ -1,11 +1,22 @@
 '''
-Usage
-MUJOCO_GL=egl python humanoidverse/deploy_agent.py +simulator=isaacsim     +checkpoint=logs/MotionTracking/20260713_kapex_walkmotion_tracking/model_26100.pt     +opt=record env.config.save_motion=True env.config.save_note=kapex_walk
+학습된 정책을 배포(rollout)하며 obs/action/dones/qpos 를 수집한다.
+태스크(motion tracking / locomotion)는 env 에 motion library 유무로 자동 분기된다.
 
-robot.motion.motion_file 이 디렉토리면 안의 모든 모션(.pkl)을 순회하며
-모션당 +runs_per_motion(기본 2)회 rollout 을 수집하고,
-각 rollout 을 <모션이름>_run<n>.pt / <모션이름>_run<n>.mp4 쌍으로 저장한다.
-비디오는 수집한 qpos 를 mujoco 오프스크린 렌더링으로 생성 (헤드리스는 MUJOCO_GL=egl).
+[motion tracking] robot.motion.motion_file 의 모든 모션(.pkl)을 순회하며 모션당
+    +runs_per_motion(기본 2)회 rollout 을 수집, <모션이름>_run<n>.pt 로 저장.
+    MUJOCO_GL=egl python humanoidverse/deploy_agent.py +simulator=isaacsim \
+        +checkpoint=logs/MotionTracking/.../model_26100.pt +num_envs=1 +num_collect_steps=2000
+
+[locomotion] velocity command 로 구동하며 +num_rollouts(기본 runs_per_motion)회 수집,
+    locomotion_run<n>.pt 로 저장. 커맨드는 아래 중 하나:
+      - +algo.config.eval_command=[vx,vy,yaw,heading] → 전 rollout 고정
+      - 미지정 시 command range 에서 매 rollout 랜덤 샘플 (+randomize_command=False 로 끄면 0 커맨드)
+    MUJOCO_GL=egl python humanoidverse/deploy_agent.py +simulator=mujoco \
+        +checkpoint=logs/kapex_locomotion/.../model_36000.pt +num_envs=1 \
+        +robot.asset.xml_file=kapex/kapex_play.xml +terrain.mesh_type=plane \
+        +domain_rand.push_robots=False +num_rollouts=8
+
++save_video=True 이면 수집 qpos 를 mujoco 오프스크린 렌더링으로 <stem>.mp4 저장 (헤드리스는 MUJOCO_GL=egl).
 '''
 import logging
 import os
@@ -174,44 +185,25 @@ def main(override_config: OmegaConf):
     config.env.config.ckpt_dir = str(checkpoint.parent)
     env = instantiate(config.env, device=device)
 
-    # ------------------------------------------------------------------
-    # Video recording (IsaacSim only): +save_video=True [+video_resolution=[1280,720]]
-    # ------------------------------------------------------------------
-    save_video = bool(config.get("save_video", False)) and simulator_type == "IsaacSim"
-    rgb_annotator = None
-    video_frames = []
-    if save_video:
-        import omni.replicator.core as rep
-
-        resolution = tuple(config.get("video_resolution", (1280, 720)))
-        render_product = rep.create.render_product(
-            "/OmniverseKit_Persp", resolution=resolution
-        )
-        rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
-        rgb_annotator.attach([render_product])
-        # camera follows the robot root; offset relative to the robot (override: +camera_offset=[2.0,-2.0,1.0])
-        camera_offset = tuple(config.get("camera_offset", (2.0, -2.0, 1.0)))
-        logger.info(f"Recording video at {resolution} from the viewport camera")
-
     algo: BaseAlgo = instantiate(config.algo, env=env, device=device, log_dir=None)
     algo.setup()
     algo.load(config.checkpoint)
 
-    # ------------------------------------------------------------------
-    # Rollout: iterate motions, run the policy runs_per_motion times each,
-    # and save (obs/act data, mujoco-rendered video) pairs per rollout
-    # ------------------------------------------------------------------
     if env.num_envs != 1:
         logger.warning(
-            f"num_envs={env.num_envs}: per-motion collection assumes num_envs=1; "
-            "each load_motions(start_idx) call assigns consecutive motions to envs."
+            f"num_envs={env.num_envs}: per-rollout collection assumes num_envs=1."
         )
 
     algo._create_eval_callbacks()
     algo._pre_evaluate_policy()
     algo.eval_policy = algo._get_inference_policy()
 
-    # MJCF for offscreen video rendering of collected qpos
+    # 태스크 판별: motion tracking 은 motion library 로 구동, locomotion 은 velocity command 로 구동
+    is_motion_tracking = hasattr(env, "_motion_lib")
+    sim_name = config.simulator.config.name
+
+    # 수집 qpos 로 mujoco 오프스크린 비디오를 렌더 (모든 시뮬레이터에서 이식 가능)
+    save_video = bool(config.get("save_video", False))
     mjcf_path = (
         Path(config.robot.motion.asset.assetRoot)
         / config.robot.motion.asset.assetFileName
@@ -219,13 +211,15 @@ def main(override_config: OmegaConf):
     dof_names = list(config.robot.dof_names)
     render_fps = round(1.0 / env.dt)
 
-    num_motions = env.num_motions
-    # keys can be full paths when motion_file is a directory — keep only the stem
-    motion_keys = [Path(str(k)).stem for k in env._motion_lib._motion_data_keys]
-    logger.info(
-        f"Collecting {runs_per_motion} rollouts x {num_motions} motions "
-        f"(per-rollout step cap: {num_collect_steps})"
-    )
+    def capture_qpos():
+        """robot_root_states → mujoco free-joint qpos [pos(3), quat wxyz(4), dof]."""
+        root = env.simulator.robot_root_states[0].detach().cpu()
+        if sim_name == "isaacsim":
+            quat_wxyz = root[3:7]  # isaacsim: robot_root_states 는 이미 wxyz
+        else:
+            quat_wxyz = root[[6, 3, 4, 5]]  # isaacgym/mujoco/genesis: xyzw → wxyz
+        dof_pos = env.simulator.dof_pos[0].detach().cpu()
+        return torch.cat([root[:3], quat_wxyz, dof_pos])
 
     def rollout():
         """Run one episode until done (or step cap); return buffers."""
@@ -242,54 +236,107 @@ def main(override_config: OmegaConf):
                 actor_state["step"] = step
                 actor_state = algo._pre_eval_env_step(actor_state)
 
-                # record the observation the policy acted on, and its action
+                # 정책이 본 관측과 그때 낸 액션을 기록
                 for k in obs_buffer:
                     obs_buffer[k].append(actor_state["obs"][k].detach().cpu().clone())
                 act_buffer.append(actor_state["actions"].detach().cpu().clone())
 
-            if save_video:
-                root_pos = env.simulator.robot_root_states[0, :3].detach().cpu().tolist()
-                env.simulator.sim.set_camera_view(
-                    eye=[root_pos[i] + camera_offset[i] for i in range(3)],
-                    target=root_pos,
-                )
-                # headless render is skipped unless has_rtx_sensors(), which a
-                # replicator render product does not set — render explicitly
-                env.simulator.sim.render()
-                frame = rgb_annotator.get_data()
-                if frame is not None and frame.size > 0:
-                    video_frames.append(frame[..., :3].copy())
+                actor_state = algo.env_step(actor_state)
+                actor_state = algo._post_eval_env_step(actor_state)
 
-            if (step + 1) % 100 == 0:
-                logger.info(f"step {step + 1}/{num_collect_steps}")
+                dones = actor_state["dones"].detach().cpu().clone()
+                done_buffer.append(dones)
+                qpos_buffer.append(capture_qpos())
+
+                if dones[0]:
+                    break
+
+        return obs_buffer, act_buffer, done_buffer, qpos_buffer
+
+    def save_rollout(stem, obs_buffer, act_buffer, done_buffer, qpos_buffer, meta):
+        data = {
+            "obs": {k: torch.stack(v) for k, v in obs_buffer.items()},
+            "actions": torch.stack(act_buffer),
+            "dones": torch.stack(done_buffer),
+            "qpos": torch.stack(qpos_buffer),
+            "checkpoint": str(checkpoint),
+            "num_envs": env.num_envs,
+            "num_steps": len(act_buffer),
+            "fps": render_fps,
+            **meta,
+        }
+        data_path = save_dir / f"{stem}.pt"
+        torch.save(data, data_path)
+        logger.info(
+            f"saved {data_path} ({len(act_buffer)} steps, "
+            f"actions {tuple(data['actions'].shape)})"
+        )
+        if save_video:
+            video_path = save_dir / f"{stem}.mp4"
+            try:
+                render_qpos_video(
+                    mjcf_path, data["qpos"].numpy(), dof_names, render_fps, video_path
+                )
+                logger.info(f"saved {video_path}")
+            except Exception as e:
+                logger.error(f"video rendering failed for {stem}: {e}")
+
+    if is_motion_tracking:
+        # --------------------------------------------------------------
+        # Motion tracking: 모션 디렉토리를 순회하며 모션당 runs_per_motion 회 수집
+        # --------------------------------------------------------------
+        num_motions = env.num_motions
+        motion_keys = [Path(str(k)).stem for k in env._motion_lib._motion_data_keys]
+        logger.info(
+            f"[motion_tracking] collecting {runs_per_motion} rollouts x {num_motions} "
+            f"motions (per-rollout step cap: {num_collect_steps})"
+        )
+        for motion_idx in range(num_motions):
+            env._motion_lib.load_motions(random_sample=False, start_idx=motion_idx)
+            motion_key = motion_keys[motion_idx]
+            for run in range(runs_per_motion):
+                logger.info(f"[{motion_idx + 1}/{num_motions}] {motion_key} run {run}")
+                buffers = rollout()
+                save_rollout(
+                    f"{motion_key}_run{run}", *buffers,
+                    {"motion_key": motion_key, "motion_idx": motion_idx, "run": run},
+                )
+    else:
+        # --------------------------------------------------------------
+        # Locomotion: velocity command 로 구동하여 num_rollouts 회 수집
+        #   +algo.config.eval_command=[vx,vy,yaw,heading] → 고정 커맨드
+        #   미지정 시 매 rollout 마다 command range 에서 랜덤 샘플 (데이터 다양성)
+        # --------------------------------------------------------------
+        n_rollouts = int(config.get("num_rollouts", runs_per_motion))
+        eval_command = None
+        try:
+            eval_command = config.algo.config.get("eval_command", None)
+        except Exception:
+            pass
+        randomize_command = bool(config.get("randomize_command", eval_command is None))
+        logger.info(
+            f"[locomotion] collecting {n_rollouts} rollouts "
+            f"(fixed_command={None if eval_command is None else list(eval_command)}, "
+            f"randomize_command={randomize_command}, step cap: {num_collect_steps})"
+        )
+        all_env_ids = torch.arange(env.num_envs, device=device)
+        for run in range(n_rollouts):
+            # 커맨드 설정: eval 모드에서는 reset 이 커맨드를 덮어쓰지 않으므로
+            # (locomotion._reset_tasks_callback) rollout 전에 세팅하면 유지된다.
+            if eval_command is not None:
+                c = torch.tensor(list(eval_command), dtype=torch.float32, device=device)
+                env.commands[:, : len(c)] = c
+            elif randomize_command:
+                env._resample_commands(all_env_ids)
+            cmd_used = env.commands[0].detach().cpu().tolist()
+            logger.info(f"[locomotion] run {run}/{n_rollouts} command={[round(x, 3) for x in cmd_used]}")
+            buffers = rollout()
+            save_rollout(
+                f"locomotion_run{run}", *buffers,
+                {"run": run, "command": cmd_used},
+            )
 
     algo._post_evaluate_policy()
-
-    # stack to [num_steps, num_envs, dim] tensors and save
-    data = {
-        "obs": {k: torch.stack(v) for k, v in obs_buffer.items()},
-        "actions": torch.stack(act_buffer),
-        "dones": torch.stack(done_buffer),
-        "checkpoint": str(checkpoint),
-        "num_envs": env.num_envs,
-        "num_steps": num_collect_steps,
-    }
-    save_path = save_dir / f"deploy_data_ckpt_{ckpt_num}.pt"
-    torch.save(data, save_path)
-    logger.info(f"Saved collected data to {save_path}")
-    logger.info(
-        f"actions shape: {data['actions'].shape}, "
-        + ", ".join(f"obs[{k}]: {tuple(v.shape)}" for k, v in data["obs"].items())
-    )
-
-    if save_video and video_frames:
-        import imageio
-
-        sim_cfg = config.simulator.config.sim
-        fps = int(sim_cfg.fps / sim_cfg.control_decimation)
-        video_path = save_dir / f"deploy_video_ckpt_{ckpt_num}.mp4"
-        imageio.mimwrite(video_path, video_frames, fps=fps, quality=8)
-        logger.info(f"Saved video ({len(video_frames)} frames @ {fps} fps) to {video_path}")
 
     if simulator_type == "IsaacSim":
         simulation_app.close()

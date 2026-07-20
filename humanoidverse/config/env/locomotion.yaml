@@ -20,6 +20,8 @@ env:
       ang_vel_yaw: [-1.0, 1.0]
       heading: [-3.14, 3.14]
     locomotion_command_resampling_time: 10.0
+    # command 리샘플 시 이 확률로 정지(standstill) 커맨드 배정 — walk/stand 둘 다 학습
+    locomotion_stand_still_prob: 0.15
 
     termination:
       terminate_by_contact: False # problematic in isaacgym when g1+terrain

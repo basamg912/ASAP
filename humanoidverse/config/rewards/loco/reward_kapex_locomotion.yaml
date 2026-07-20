@@ -29,12 +29,16 @@ rewards:
       limits_torque: -0.1
       feet_air_time: 1.0
       base_height: -50.0
-      penalty_feet_height: -3.
+      penalty_feet_height: -5.
       termination: -200.0
       # 팔(어깨~손목) 관절이 default pose에서 벗어나면 벌점 — 팔 발산 방지
       upperbody_joint_angle_freeze: -0.2
       # hip roll/yaw 벌점 — 다리 벌리고 버티는 자세 방지
       penalty_hip_pos: -1.0
+      # 몸통(WL3) 직립 벌점 — 상체 앞으로 숙임 방지 (문제 1)
+      penalty_torso_ori: -1.0
+      # zero command 시 발 스테핑/발 XY 이동 벌점 (문제 2)
+      penalty_stand_still: -1.0
       # penalty_in_the_air: -100.0
       # feet_max_height_for_this_air: -100.0
 
@@ -73,7 +77,10 @@ rewards:
       soft_torque_curriculum_degree: 0.00000025
       soft_torque_curriculum_level_down_threshold: 40
       soft_torque_curriculum_level_up_threshold: 42
-  feet_height_target: 0.2
+  # WL3 직립 시 프레임에서 본 중력 벡터 (WL3는 z-up 프레임이 아님 — FK로 산출)
+  torso_upright_local_gravity: [0.0, 1.0, 0.0]
+  # 발목(LL6) 원점 z 기준. 직립 시 0.097 → 0.25는 약 15cm 스윙 리프트 (문제 3)
+  feet_height_target: 0.25
   locomotion_max_contact_force: 350.0
   desired_feet_max_height_for_this_air: 0.2
   desired_base_height: 0.91
@@ -104,4 +111,6 @@ rewards:
     "feet_max_height_for_this_air",
     "base_height",
     "penalty_feet_height",
-    "penalty_hip_pos"]
+    "penalty_hip_pos",
+    "penalty_torso_ori",
+    "penalty_stand_still"]
