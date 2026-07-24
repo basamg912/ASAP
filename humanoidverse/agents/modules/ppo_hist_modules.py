@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+import torch
+import torch.nn as nn
+from torch.distributions import Normal
+
+from .ppo_modules import PPOActor
+
+
+class MLP(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dims, activation="ELU"):
+        super().__init__()
+        act = getattr(nn, activation)()
+        layers = [nn.Linear(input_dim, hidden_dims[0]), act]
+        for l in range(len(hidden_dims)):
+            if l == len(hidden_dims) - 1:
+                layers.append(nn.Linear(hidden_dims[l], output_dim))
+            else:
+                layers += [nn.Linear(hidden_dims[l], hidden_dims[l + 1]), act]
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class HistoryEncoder(nn.Module):
+    def __init__(self, history_dim, latent_dim, hidden_dims=(256, 128), activation="ELU"):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.net = MLP(history_dim, 2 * latent_dim, list(hidden_dims), activation)
+
+    def forward(self, history):
+        out = self.net(history)
+        mu = out[..., : self.latent_dim]
+        logvar = out[..., self.latent_dim :]
+        return mu, logvar
+
+    def sample(self, history):
+        mu, logvar = self.forward(history)
+        if self.training:
+            std = torch.exp(0.5 * logvar)
+            z = mu + std * torch.randn_like(std)
+        else:
+            z = mu
+        return z, mu, logvar
