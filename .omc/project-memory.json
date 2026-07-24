@@ -1,0 +1,453 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1784695069663,
+  "projectRoot": "/home/kist/work/workspace/ACM/ASAP",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "cd /home/kist/work/workspace/ACM/ASAP\necho \"=== new commit ===\"; git log --oneline ed332f3..HEAD\necho \"=== changed files ===\"; git show --stat HEAD | tail -8\necho \"=== did commit touch existing eval_agent.py? (should NOT) ===\"; git show --stat HEAD | grep -E \"eval_agent.py$\" && echo \"!!! WARNING edited existing eval_agent.py\" || echo \"OK: existing eval_agent.py untouched\"\necho \"=== strays? ===\"; git status --porcelain | grep '^??' | grep -v '.omc/' || echo \"(none)\"\necho \"=== full test suite ===\"; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/kist/anaconda3/envs/hvgym/bin/python -m pytest tests/agents/test_ppo_hist_modules.py 2>&1 | tail -4\necho \"=== import + parse checks ===\"; /home/kist/anaconda3/envs/hvgym/bin/python -c \"from humanoidverse.agents.ppo_hist.ppo_hist import PPOHistoryEncoder; print('agent import OK')\" 2>&1 | tail -2\n/home/kist/anaconda3/envs/hvgym/bin/python -c \"from humanoidverse.agents.ppo_hist.inference_wrapper import HistEncoderInferenceModule; print('wrapper import OK')\" 2>&1 | tail -2\n/home/kist/anaconda3/envs/hvgym/bin/python -c \"import ast; ast.parse(open('humanoidverse/eval_agent_hist.py').read()); print('eval_agent_hist parse OK')\" 2>&1 | tail -2",
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "scripts"
+    ],
+    "gitBranches": {
+      "defaultBranch": "master",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "asap.egg-info": {
+      "path": "asap.egg-info",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1784695069660,
+      "keyFiles": [
+        "PKG-INFO",
+        "SOURCES.txt",
+        "dependency_links.txt",
+        "requires.txt",
+        "top_level.txt"
+      ]
+    },
+    "ckpt": {
+      "path": "ckpt",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1784695069660,
+      "keyFiles": [
+        "config.yaml",
+        "model_14000.pt"
+      ]
+    },
+    "humanoidverse": {
+      "path": "humanoidverse",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1784695069660,
+      "keyFiles": [
+        "__init__.py",
+        "deploy_agent.py",
+        "eval_agent.py",
+        "train_agent.py"
+      ]
+    },
+    "imgs": {
+      "path": "imgs",
+      "purpose": null,
+      "fileCount": 13,
+      "lastAccessed": 1784695069661,
+      "keyFiles": [
+        "CMU-NV-logo-crop-png.png",
+        "asap-sim2sim-clip0-ezgif.com-video-to-gif-converter.gif",
+        "asap-sim2sim-clip1-ezgif.com-video-to-gif-converter.gif",
+        "asap-sim2sim-clip3-ezgif.com-video-to-gif-converter.gif",
+        "asap-sim2sim-clip4-ezgif.com-video-to-gif-converter.gif"
+      ]
+    },
+    "isaac_utils": {
+      "path": "isaac_utils",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1784695069661,
+      "keyFiles": [
+        "setup.py"
+      ]
+    },
+    "logs": {
+      "path": "logs",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1784695069661,
+      "keyFiles": []
+    },
+    "logs_eval": {
+      "path": "logs_eval",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1784695069661,
+      "keyFiles": []
+    },
+    "motionData": {
+      "path": "motionData",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1784695069662,
+      "keyFiles": [
+        "locomotion_run0.pt",
+        "locomotion_run1.pt",
+        "locomotion_run2.pt",
+        "locomotion_run3.pt",
+        "locomotion_run4.pt"
+      ]
+    },
+    "runs": {
+      "path": "runs",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1784695069662,
+      "keyFiles": []
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 0,
+      "lastAccessed": 1784695069662,
+      "keyFiles": []
+    },
+    "sim2real": {
+      "path": "sim2real",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1784695069662,
+      "keyFiles": [
+        "setup.py",
+        "state_publisher.py"
+      ]
+    },
+    "humanoidverse/config": {
+      "path": "humanoidverse/config",
+      "purpose": "Configuration files",
+      "fileCount": 3,
+      "lastAccessed": 1784695069662,
+      "keyFiles": [
+        "base.yaml",
+        "base_eval.yaml",
+        "base_eval_server.yaml"
+      ]
+    },
+    "humanoidverse/data": {
+      "path": "humanoidverse/data",
+      "purpose": "Data files",
+      "fileCount": 0,
+      "lastAccessed": 1784695069662,
+      "keyFiles": []
+    },
+    "logs_eval/TEST": {
+      "path": "logs_eval/TEST",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1784695069662,
+      "keyFiles": []
+    },
+    "sim2real/config": {
+      "path": "sim2real/config",
+      "purpose": "Configuration files",
+      "fileCount": 1,
+      "lastAccessed": 1784695069663,
+      "keyFiles": [
+        "g1_29dof_hist.yaml"
+      ]
+    },
+    "sim2real/models": {
+      "path": "sim2real/models",
+      "purpose": "Data models",
+      "fileCount": 0,
+      "lastAccessed": 1784695069663,
+      "keyFiles": []
+    },
+    "sim2real/utils": {
+      "path": "sim2real/utils",
+      "purpose": "Utility functions",
+      "fileCount": 11,
+      "lastAccessed": 1784695069663,
+      "keyFiles": [
+        "__init__.py",
+        "command_sender.py",
+        "history_handler.py"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "humanoidverse/agents/modules/ppo_hist_modules.py",
+      "accessCount": 9,
+      "lastAccessed": 1784872866343,
+      "type": "file"
+    },
+    {
+      "path": "tests/agents/test_ppo_hist_modules.py",
+      "accessCount": 9,
+      "lastAccessed": 1784872935250,
+      "type": "file"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-07-24-history-encoder-vae.md",
+      "accessCount": 8,
+      "lastAccessed": 1784872538575,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/progress.md",
+      "accessCount": 7,
+      "lastAccessed": 1784873165193,
+      "type": "file"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-07-24-history-encoder-vae-design.md",
+      "accessCount": 5,
+      "lastAccessed": 1784870423861,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/algo/ppo_history_encoder.yaml",
+      "accessCount": 5,
+      "lastAccessed": 1784872906761,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/agents/ppo_hist/ppo_hist.py",
+      "accessCount": 4,
+      "lastAccessed": 1784872950605,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/obs/loco/leggedloco_obs_history_encoder.yaml",
+      "accessCount": 3,
+      "lastAccessed": 1784872304020,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/exp/locomotion_history_encoder.yaml",
+      "accessCount": 3,
+      "lastAccessed": 1784872306991,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/agents/modules/ppo_modules.py",
+      "accessCount": 2,
+      "lastAccessed": 1784871823722,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/obs/loco/leggedloco_obs_history_wolinvel.yaml",
+      "accessCount": 2,
+      "lastAccessed": 1784872152457,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/utils/helpers.py",
+      "accessCount": 2,
+      "lastAccessed": 1784872165357,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/eval_agent.py",
+      "accessCount": 2,
+      "lastAccessed": 1784872865625,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/agents/ppo/ppo.py",
+      "accessCount": 2,
+      "lastAccessed": 1784872874623,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/envs/locomotion/locomotion.py",
+      "accessCount": 1,
+      "lastAccessed": 1784779467669,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/robot/kapex/kapex_31dof.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1784779468694,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/envs/legged_base_task/legged_robot_base.py",
+      "accessCount": 1,
+      "lastAccessed": 1784779614869,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/envs/base_task/base_task.py",
+      "accessCount": 1,
+      "lastAccessed": 1784779682171,
+      "type": "file"
+    },
+    {
+      "path": "logs/kapex_locomotion/20260723_165728-w_h1_reward-locomotion-KAPEX_wo_hand_head/config.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1784855065338,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-1-brief.md",
+      "accessCount": 1,
+      "lastAccessed": 1784871329728,
+      "type": "file"
+    },
+    {
+      "path": "tests/__init__.py",
+      "accessCount": 1,
+      "lastAccessed": 1784871345698,
+      "type": "file"
+    },
+    {
+      "path": "tests/agents/__init__.py",
+      "accessCount": 1,
+      "lastAccessed": 1784871350321,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-1-report.md",
+      "accessCount": 1,
+      "lastAccessed": 1784871380281,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-2-brief.md",
+      "accessCount": 1,
+      "lastAccessed": 1784871559264,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-2-report.md",
+      "accessCount": 1,
+      "lastAccessed": 1784871627317,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-3-brief.md",
+      "accessCount": 1,
+      "lastAccessed": 1784871696520,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-3-report.md",
+      "accessCount": 1,
+      "lastAccessed": 1784871751724,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-4-brief.md",
+      "accessCount": 1,
+      "lastAccessed": 1784871814065,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/agents/modules/modules.py",
+      "accessCount": 1,
+      "lastAccessed": 1784871830283,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-4-report.md",
+      "accessCount": 1,
+      "lastAccessed": 1784871896589,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-5-brief.md",
+      "accessCount": 1,
+      "lastAccessed": 1784872094533,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/exp/locomotion.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1784872115836,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/algo/ppo.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1784872115995,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/env/locomotion.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1784872160834,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-5-report.md",
+      "accessCount": 1,
+      "lastAccessed": 1784872359884,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-6-brief.md",
+      "accessCount": 1,
+      "lastAccessed": 1784872588909,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/agents/ppo_hist/__init__.py",
+      "accessCount": 1,
+      "lastAccessed": 1784872617915,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-6-report.md",
+      "accessCount": 1,
+      "lastAccessed": 1784872704506,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-7-brief.md",
+      "accessCount": 1,
+      "lastAccessed": 1784872858406,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/agents/ppo_hist/inference_wrapper.py",
+      "accessCount": 1,
+      "lastAccessed": 1784872927726,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/eval_agent_hist.py",
+      "accessCount": 1,
+      "lastAccessed": 1784872990725,
+      "type": "file"
+    },
+    {
+      "path": ".superpowers/sdd/task-7-report.md",
+      "accessCount": 1,
+      "lastAccessed": 1784873060735,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

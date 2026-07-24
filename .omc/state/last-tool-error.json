@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"/home/kist/anaconda3/envs/hvgym/bin/python -c \\\"\\nimport hydra\\nfrom hydra import compose, initialize_config_dir\\nfrom humanoidverse.utils.helpers import pre_process_config\\nimport os\\ncfg...",
+  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"<string>\", line 17, in <module>\n  File \"/home/kist/work/workspace/ACM/ASAP/humanoidverse/utils/helpers.py\", line 36, in pre_process_config\n    _obs_key_list = config.env.config.obs.obs_dict\n  File \"/home/kist/anaconda3/envs/hvgym/lib/python3.8/site-packages/omegaconf/dictconfig.py\", line 359, in __getattr__\n    self._format_and_raise(key=key, value=None, cause=e)\n  File \"/home/kist/anaconda3/envs/hvgym/lib/python3.8/site-packages/omegaconf/b...",
+  "timestamp": "2026-07-24T05:49:06.750Z",
+  "retry_count": 3
+}

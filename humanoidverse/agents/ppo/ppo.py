@@ -344,7 +344,7 @@ class PPO(BaseAlgo):
             next_is_not_terminal = 1.0 - dones[step].float()
             delta = rewards[step] + next_is_not_terminal * self.gamma * next_values - values[step]
             advantage = delta + next_is_not_terminal * self.gamma * self.lam * advantage
-            returns[step] = advantage + values[step]
+            returns[step] = advantage + values[step] # for training Critic function.
 
         # Compute and normalize the advantages
         advantages = returns - values

@@ -109,7 +109,7 @@ def main(config: OmegaConf):
     config.env.config.save_rendering_dir = str(
         Path(config.experiment_dir) / "renderings_training"
     )
-    env: BaseEnv = instantiate(config=config.env, device=device)
+    env: BaseTask = instantiate(config=config.env, device=device)
 
     experiment_save_dir = Path(config.experiment_dir)
     experiment_save_dir.mkdir(exist_ok=True, parents=True)

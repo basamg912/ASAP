@@ -381,7 +381,14 @@ class LeggedRobotLocomotion(LeggedRobotBase):
     
     def _get_obs_command_ang_vel(self):
         return self.commands[:, 2:3]
-    
+
+    def _get_obs_command_stand(self):
+        # walk/stand 모드 신호: 1 = standstill(정지 명령), 0 = walk(이동 명령).
+        # 커맨드 선속도 크기에서 파생 → train/eval/deploy 에서 항상 일관됨
+        # (standstill 은 lin vel 정확히 0, walk 는 norm>0.2 이라 0.1 로 분리됨)
+        is_stand = torch.norm(self.commands[:, :2], dim=1, keepdim=True) < 0.1
+        return is_stand.float()
+
     def _get_obs_phase_time(self):
         return self.phase_time.unsqueeze(1)
     

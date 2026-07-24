@@ -18,6 +18,8 @@
 - Encoder = Flatten → MLP.
 - Defaults: `latent_dim=16`, encoder `[256,128]`, decoder `[128,256]`, `vae_beta=1.0`, `recon_coef=1.0`. Concurrent stability knobs (already tuned elsewhere): `entropy_coef=0.001`, `init_noise_std=0.5`.
 - Python interpreter for tests/training: `/home/kist/anaconda3/envs/hvgym/bin/python`.
+- **pytest invocation:** always prefix `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` (a ROS2 `launch_testing` pytest plugin in this env needs `lark` and otherwise breaks collection). E.g. `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/kist/anaconda3/envs/hvgym/bin/python -m pytest tests/agents/test_ppo_hist_modules.py -v`.
+- Create ONLY the files named in each task — no extra directories or files.
 - TDD, frequent commits, DRY, YAGNI.
 
 ---
@@ -607,16 +609,18 @@ algo:
 ```yaml
 # humanoidverse/config/exp/locomotion_history_encoder.yaml
 # @package _global_
-# Additive copy of exp/locomotion.yaml using the new algo + obs configs.
+# Additive copy of exp/locomotion.yaml, only swapping the algo group.
+# NOTE: obs is selected on the CLI (+obs=loco/leggedloco_obs_history_encoder),
+# exactly as the existing run does — do NOT add a `- /obs:` default here.
 defaults:
   - /algo: ppo_history_encoder
   - /env: locomotion
-  - /obs: loco/leggedloco_obs_history_encoder
 
+experiment_name: hist_encoder
 log_task_name: locomotion_history_encoder
 ```
 
-Note: match the group-override keys (`/algo`, `/env`, `/obs`) to those in the existing `exp/locomotion.yaml`; if `exp/locomotion.yaml` selects obs differently (e.g. via robot config), mirror that mechanism here instead of `- /obs:`.
+Note: `exp/locomotion.yaml` sets only `/algo` and `/env`; obs is passed at launch via `+obs=...`. Mirror that exactly — the new exp only swaps `/algo` to `ppo_history_encoder`.
 
 - [ ] **Step 4: Verify config composition (dim wiring)**
 
@@ -629,7 +633,15 @@ from humanoidverse.utils.helpers import pre_process_config
 import os
 cfg_dir = os.path.abspath('humanoidverse/config')
 with initialize_config_dir(config_dir=cfg_dir, version_base=None):
-    cfg = compose(config_name='base', overrides=['+exp=locomotion_history_encoder','+robot=kapex/kapex_31dof','+domain_rand=NO_domain_rand','+terrain=terrain_locomotion_plane'])
+    cfg = compose(config_name='base', overrides=[
+        '+simulator=isaacsim',
+        '+exp=locomotion_history_encoder',
+        '+domain_rand=domain_rand_base',
+        '+rewards=loco/reward_kapex_locomotion',
+        '+robot=kapex/kapex_31dof',
+        '+terrain=terrain_locomotion_plane',
+        '+obs=loco/leggedloco_obs_history_encoder',
+    ])
     pre_process_config(cfg)
     d = cfg.robot.algo_obs_dim_dict
     print('actor_obs', d['actor_obs'], 'encoder_obs', d['encoder_obs'], 'recon_target', d['recon_target'])
@@ -638,7 +650,7 @@ with initialize_config_dir(config_dir=cfg_dir, version_base=None):
     print('OK')
 "
 ```
-Expected: prints dims and `OK`. (Adjust the `+domain_rand`/`+terrain` overrides to whatever `exp/locomotion.yaml` normally requires — copy them from a working locomotion launch command.)
+Expected: prints dims and `OK` (KAPEX dof=31 → recon_target 68, encoder_obs 510). These are the exact override groups the existing working run used (from its `.hydra/overrides.yaml`), with `+obs` swapped to the new file. If importing `humanoidverse.utils.helpers` fails in `hvgym` due to a sim import, report it — compose/`pre_process_config` should be sim-free (the simulator is only instantiated later via its `_target_`).
 
 - [ ] **Step 5: Commit**
 
@@ -695,6 +707,14 @@ class PPOHistoryEncoder(PPO):
         self.recon_coef = self.config.recon_coef
         self.encoder_obs_key = self.config.encoder_obs_key
         self.recon_target_key = self.config.recon_target_key
+
+    # ---- add VAE keys so _training_step averages + _logging_to_writer emits them ----
+    def _init_loss_dict_at_training_step(self):
+        loss_dict = super()._init_loss_dict_at_training_step()
+        loss_dict['recon'] = 0
+        loss_dict['vae_kl'] = 0
+        loss_dict['latent_std'] = 0
+        return loss_dict
 
     # ---- models: actor carries encoder+decoder ----
     def _setup_models_and_optimizer(self):
@@ -864,9 +884,10 @@ class PPOHistoryEncoder(PPO):
         return loss_dict
 ```
 
-Notes for the implementer:
-- `_init_config` name: confirm the base `PPO` config-loading hook name (search `ppo.py` for where `self.gamma`, `self.entropy_coef` etc. are set — around `ppo.py:88-92`). If that block lives in a method with a different name, override that method instead and call `super()`. If it is inline in `__init__`, instead read the extra config keys at the top of `_setup_models_and_optimizer`.
-- `loss_dict` new keys (`recon`, `vae_kl`, `latent_std`): confirm how `loss_dict` is initialized/averaged and logged in the base training loop (search `ppo.py` for `loss_dict` init and `add_scalar`). If the base pre-initializes a fixed key set, initialize these three keys wherever it initializes `Value`/`Surrogate`/`Entropy`, and add matching `self.writer.add_scalar('Loss/recon', ...)` lines in the subclass's logging override. Do NOT edit base logging; override the logging method if needed.
+Resolved facts (verified against base `ppo.py` — no guessing needed):
+- `_init_config` IS a method (`ppo.py:63`) called from `__init__`; the override above correctly calls `super()._init_config()` then reads the extra keys.
+- Logging is AUTOMATIC and needs NO logging override: `_training_step` (`ppo.py:354`) averages every key in `loss_dict` by `num_updates` (`ppo.py:366-367`), and `_logging_to_writer` (`ppo.py:545`) emits every `loss_dict` key as `Loss/<key>` (`ppo.py:547-548`). The subclass's `_init_loss_dict_at_training_step` override adds `recon`/`vae_kl`/`latent_std` (=0) and `_update_ppo` accumulates them, so they surface as `Loss/recon`, `Loss/vae_kl`, `Loss/latent_std` (latent_std under `Loss/`, not `Policy/` — acceptable).
+- `_update_algo_step` (`ppo.py:378`) calls `self._update_ppo(...)`, which resolves to the subclass override — no need to touch it.
 
 - [ ] **Step 3: Import smoke test (no sim)**
 
@@ -881,15 +902,20 @@ Expected: `import OK PPOHistoryEncoder`.
 
 - [ ] **Step 4: Short training smoke-run (needs GPU/IsaacGym)**
 
-Run (mirror your normal locomotion launch, swapping the exp and shrinking envs/iters):
+Run with the SAME override groups the existing run used (`.hydra/overrides.yaml`), only swapping `+exp`, `+obs`, and shrinking envs/iters. Use the sim/GPU python env you normally train with (the existing run used `+simulator=isaacsim`, i.e. the isaaclab env — NOT necessarily `hvgym`):
 ```bash
-/home/kist/anaconda3/envs/hvgym/bin/python humanoidverse/train_agent.py \
-  +exp=locomotion_history_encoder +robot=kapex/kapex_31dof \
+python humanoidverse/train_agent.py \
+  +simulator=isaacsim \
+  +exp=locomotion_history_encoder \
+  +domain_rand=domain_rand_base \
   +rewards=loco/reward_kapex_locomotion \
+  +robot=kapex/kapex_31dof \
+  +terrain=terrain_locomotion_plane \
+  +obs=loco/leggedloco_obs_history_encoder \
   num_envs=64 project_name=smoke experiment_name=hist_enc_smoke \
   algo.config.num_learning_iterations=5 headless=True
 ```
-Expected: training starts, prints per-iteration logs including a decreasing/finite `recon` and finite `vae_kl`; no shape errors. (Copy any additional overrides your working locomotion command uses — domain_rand/terrain/simulator.)
+Expected: training starts, per-iteration logs include finite `recon` and `vae_kl`; no shape errors. This step needs the GPU + isaacsim environment; if the executor lacks it, mark this step "deferred to user" and rely on the Step 3 import smoke test + static review for acceptance.
 
 - [ ] **Step 5: Regression guard — confirm nothing existing was modified**
 
