@@ -429,7 +429,7 @@ git commit -m "feat(ppo_hist): add PPOActorWithHistoryEncoder (joint-grad latent
 - Create: `humanoidverse/config/exp/locomotion_history_encoder.yaml`
 
 **Interfaces:**
-- Produces obs groups consumed by Task 6: `actor_obs` (current step, no history), `critic_obs` (privileged, unchanged), `encoder_obs` (= `enc_history` aux), `recon_target` (next-obs target fields). `obs_dims` must define every atomic key used.
+- Produces obs groups consumed by Task 6: `actor_obs` (current step, no history), `critic_obs` (privileged, unchanged), `encoder_obs` (= `history` aux), `recon_target` (next-obs target fields). `obs_dims` must define every atomic key used.
 - `${robot.dof_obs_size}` = per-robot dof count `N` (KAPEX: 31), resolved by Hydra.
 
 - [ ] **Step 1: Create the obs config**
@@ -439,7 +439,7 @@ git commit -m "feat(ppo_hist): add PPOActorWithHistoryEncoder (joint-grad latent
 # @package _global_
 # Additive copy of leggedloco_obs_history_wolinvel.yaml, restructured for the
 # history-encoder pipeline: short_history removed from actor_obs; a dedicated
-# encoder_obs (enc_history) and recon_target group added.
+# encoder_obs (history) and recon_target group added.
 obs:
   obs_dict:
     actor_obs: [
@@ -464,7 +464,7 @@ obs:
       actions,
       short_history
     ]
-    encoder_obs: [ enc_history ]
+    encoder_obs: [ history ]
     recon_target: [
       base_ang_vel,
       projected_gravity,
@@ -473,7 +473,7 @@ obs:
     ]
 
   obs_auxiliary:
-    enc_history: {
+    history: {
       base_ang_vel: 5,
       projected_gravity: 5,
       dof_pos: 5,
@@ -501,7 +501,7 @@ obs:
     dof_pos: 1.0,
     dof_vel: 0.05,
     actions: 1.0,
-    enc_history: 1.0,
+    history: 1.0,
     short_history: 1.0,
   }
   add_noise_currculum: False
@@ -521,7 +521,7 @@ obs:
     dof_pos: 0.0,
     dof_vel: 0.0,
     actions: 0.0,
-    enc_history: 0.0,
+    history: 0.0,
     short_history: 0.0,
   }
 
@@ -537,7 +537,7 @@ obs:
     - actions: ${robot.dof_obs_size}
 ```
 
-Notes: `recon_target` dim = `3 + 3 + N + N` (KAPEX N=31 → 68). `encoder_obs` (`enc_history`) dim = `(3+3+N+N+N)*5` (KAPEX → `(9+3·31)·5 = 510`). These are auto-computed by `helpers.pre_process_config` into `algo_obs_dim_dict`.
+Notes: `recon_target` dim = `3 + 3 + N + N` (KAPEX N=31 → 68). `encoder_obs` (`history`) dim = `(3+3+N+N+N)*5` (KAPEX → `(6+3·31)·5 = 495`). These are auto-computed by `helpers.pre_process_config` into `algo_obs_dim_dict`.
 
 - [ ] **Step 2: Create the algo config**
 
