@@ -1,0 +1,60 @@
+# @package _global_
+# humanoidverse/config/algo/ppo_history_encoder.yaml
+# Additive copy of ppo.yaml pointing at the new PPOHistoryEncoder agent, with
+# encoder/decoder module configs and VAE hyperparameters.
+algo:
+  _target_: humanoidverse.agents.ppo_hist.ppo_hist.PPOHistoryEncoder
+  _recursive_: False
+  config:
+    num_learning_epochs: 5
+    num_mini_batches: 4
+    clip_param: 0.2
+    gamma: 0.99
+    lam: 0.95
+    value_loss_coef: 1.0
+    entropy_coef: 0.001
+    actor_learning_rate: 1.e-3
+    critic_learning_rate: 1.e-3
+    max_grad_norm: 1.0
+    use_clipped_value_loss: True
+    schedule: "adaptive"
+    desired_kl: 0.01
+    num_steps_per_env: 24
+    save_interval: 100
+    load_optimizer: True
+    init_noise_std: 0.5
+    num_learning_iterations: 1000000
+    init_at_random_ep_len: True
+    eval_callbacks: null
+
+    # ---- history-encoder additions ----
+    latent_dim: 16
+    vae_beta: 1.0
+    recon_coef: 1.0
+    encoder_obs_key: encoder_obs
+    recon_target_key: recon_target
+    encoder_config:
+      input_key: encoder_obs
+      hidden_dims: [256, 128]
+      activation: ELU
+    decoder_config:
+      target_key: recon_target
+      hidden_dims: [128, 256]
+      activation: ELU
+
+    module_dict:
+      actor:
+        input_dim: [actor_obs, 16]   # actor_obs_dim + latent_dim; keep in sync with latent_dim
+        output_dim: [robot_action_dim]
+        layer_config:
+          type: MLP
+          hidden_dims: [512, 256, 128]
+          activation: ELU
+      critic:
+        type: MLP
+        input_dim: [critic_obs]
+        output_dim: [1]
+        layer_config:
+          type: MLP
+          hidden_dims: [512, 256, 128]
+          activation: ELU

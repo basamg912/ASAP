@@ -1,0 +1,11 @@
+# @package _global_
+# humanoidverse/config/exp/locomotion_history_encoder.yaml
+# Additive copy of exp/locomotion.yaml, only swapping the algo group.
+# NOTE: obs is selected on the CLI (+obs=loco/leggedloco_obs_history_encoder),
+# exactly as the existing run does — do NOT add a `- /obs:` default here.
+defaults:
+  - /algo: ppo_history_encoder
+  - /env: locomotion
+
+experiment_name: hist_encoder
+log_task_name: locomotion_history_encoder
