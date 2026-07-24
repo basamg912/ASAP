@@ -31,3 +31,10 @@ def test_history_encoder_sample_eval_is_mean():
     h = torch.randn(3, 40)
     z, mu, _ = enc.sample(h)
     assert torch.allclose(z, mu)
+
+
+def test_state_predictor_shape():
+    from humanoidverse.agents.modules.ppo_hist_modules import StatePredictor
+    dec = StatePredictor(latent_dim=16, recon_dim=68)
+    out = dec(torch.zeros(9, 16))
+    assert out.shape == (9, 68)

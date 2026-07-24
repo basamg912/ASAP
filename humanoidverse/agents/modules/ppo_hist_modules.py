@@ -43,3 +43,12 @@ class HistoryEncoder(nn.Module):
         else:
             z = mu
         return z, mu, logvar
+
+
+class StatePredictor(nn.Module):
+    def __init__(self, latent_dim, recon_dim, hidden_dims=(128, 256), activation="ELU"):
+        super().__init__()
+        self.net = MLP(latent_dim, recon_dim, list(hidden_dims), activation)
+
+    def forward(self, z):
+        return self.net(z)
