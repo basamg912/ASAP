@@ -196,3 +196,19 @@ class PPOHistoryEncoder(PPO):
         loss_dict['latent_std'] = loss_dict.get('latent_std', 0.0) + \
             torch.exp(0.5 * latent['logvar']).mean().item()
         return loss_dict
+
+    # ---- eval/deploy: base PPO._pre_eval_env_step only forwards actor_obs; the
+    # history-encoder actor additionally needs encoder_obs ----
+    def _get_inference_policy(self, device=None):
+        self.actor.eval()
+        if device is not None:
+            self.actor.to(device)
+        return self.actor.act_inference
+
+    def _pre_eval_env_step(self, actor_state):
+        obs = actor_state["obs"]
+        actions = self.eval_policy(obs['actor_obs'], obs[self.encoder_obs_key])
+        actor_state.update({"actions": actions})
+        for c in self.eval_callbacks:
+            actor_state = c.on_pre_eval_env_step(actor_state)
+        return actor_state

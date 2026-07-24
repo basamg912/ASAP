@@ -117,3 +117,14 @@ def test_actor_gradient_flows_into_encoder():
     loss.backward()
     enc_grad = next(actor.history_encoder.parameters()).grad
     assert enc_grad is not None and enc_grad.abs().sum() > 0   # joint gradient path
+
+
+def test_inference_wrapper_matches_act_inference():
+    from humanoidverse.agents.ppo_hist.inference_wrapper import HistEncoderInferenceModule
+    actor, _ = _make_actor()
+    actor.eval()
+    wrap = HistEncoderInferenceModule(actor, actor_obs_dim=30, encoder_obs_dim=40)
+    ao, eo = torch.randn(4, 30), torch.randn(4, 40)
+    ref = actor.act_inference(ao, eo)
+    got = wrap(torch.cat([ao, eo], dim=-1))
+    assert torch.allclose(ref, got, atol=1e-6)
