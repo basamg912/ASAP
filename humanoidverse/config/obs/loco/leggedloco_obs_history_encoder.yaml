@@ -2,7 +2,7 @@
 # humanoidverse/config/obs/loco/leggedloco_obs_history_encoder.yaml
 # Additive copy of leggedloco_obs_history_wolinvel.yaml, restructured for the
 # history-encoder pipeline: short_history removed from actor_obs; a dedicated
-# encoder_obs (enc_history) and recon_target group added.
+# encoder_obs (history) and recon_target group added.
 obs:
   obs_dict:
     actor_obs: [
@@ -27,7 +27,7 @@ obs:
       actions,
       short_history
     ]
-    encoder_obs: [ enc_history ]
+    encoder_obs: [ history ]
     recon_target: [
       base_ang_vel,
       projected_gravity,
@@ -36,7 +36,7 @@ obs:
     ]
 
   obs_auxiliary:
-    enc_history: {
+    history: {
       base_ang_vel: 5,
       projected_gravity: 5,
       dof_pos: 5,
@@ -64,7 +64,7 @@ obs:
     dof_pos: 1.0,
     dof_vel: 0.05,
     actions: 1.0,
-    enc_history: 1.0,
+    history: 1.0,
     short_history: 1.0,
   }
   add_noise_currculum: False
@@ -84,7 +84,7 @@ obs:
     dof_pos: 0.0,
     dof_vel: 0.0,
     actions: 0.0,
-    enc_history: 0.0,
+    history: 0.0,
     short_history: 0.0,
   }
 
