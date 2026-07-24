@@ -30,6 +30,22 @@ fixes (lower `entropy_coef`, lower `init_noise_std`, penalty-curriculum floor).
 | Encoder architecture | **Flatten → MLP** over the 5-step history |
 | Loss integration | Single combined loss: `total = ppo_loss + vae_loss`, one backward through `actor.parameters()` |
 
+### 2.1 Implementation constraint — duplicate, do not modify (hard requirement)
+
+The code paths used by **existing training must not be edited**. This feature is built as a
+**parallel, additive pipeline** (same pattern as the existing `delta_a` agent). Concretely:
+
+- **Untouched** (imported/subclassed, never edited): `humanoidverse/agents/ppo/ppo.py`
+  (`PPO`), `humanoidverse/agents/modules/ppo_modules.py` (`PPOActor`/`PPOCritic`),
+  `config/algo/ppo.yaml`, the existing obs config, and the env
+  (`humanoidverse/envs/locomotion/locomotion.py`).
+- **New files only** (see §4–§5): a new agent class, a new modules file, and new
+  algo/obs/exp configs.
+- The reconstruction target is captured by the new **agent** from the post-step observation,
+  so **no env change** is required.
+
+Work proceeds on the `master` branch (no feature branch), since nothing existing is modified.
+
 ## 3. Architecture & Data Flow
 
 ```
@@ -57,10 +73,18 @@ fixes (lower `entropy_coef`, lower `init_noise_std`, penalty-curriculum floor).
 
 ## 4. Loss Integration & Gradient Flow
 
-Encoder + decoder live **inside** the actor module (new class
-`PPOActorWithHistoryEncoder(PPOActor)`), so `self.actor.parameters()` includes them and the
-existing `actor_optimizer` (`ppo.py:113`) trains them. No new optimizer; critic untouched.
-`max_grad_norm=1.0` clip already applies to `actor.parameters()` (`ppo.py:453`).
+**New files (mirroring the `delta_a` split):**
+- `humanoidverse/agents/modules/ppo_hist_modules.py` — `HistoryEncoder` (MLP → μ,logσ),
+  `StatePredictor` (decoder MLP), and `PPOActorWithHistoryEncoder(PPOActor)`.
+- `humanoidverse/agents/ppo_hist/ppo_hist.py` — `PPOHistoryEncoder(PPO)` subclassing the
+  existing `PPO` and overriding only: `_setup_models_and_optimizer`, `_setup_storage`,
+  `_actor_act_step`, `_update_ppo`, and the rollout step that captures `next_obs_target`.
+
+Encoder + decoder live **inside** the actor module (`PPOActorWithHistoryEncoder`), so
+`self.actor.parameters()` includes them and the inherited `actor_optimizer`
+(base `ppo.py:113`) trains them. No new optimizer; critic untouched. `max_grad_norm=1.0`
+clip already applies to `actor.parameters()` (base `ppo.py:453`). Line references below
+point to the base-class methods being **overridden** (not edited).
 
 **Actor forward** (`update_distribution`, `ppo_modules.py:62`):
 ```
@@ -92,6 +116,14 @@ reflected in the action-KL — acceptable, but large VAE-driven updates can spik
 and shrink LR. Mitigated by modest `recon_coef`/`vae_beta` and grad clipping.
 
 ## 5. Config / Obs / Storage Changes
+
+All three configs are **new files** (copies); the originals stay untouched:
+- `config/algo/ppo_history_encoder.yaml` — copy of `ppo.yaml` with `_target_:
+  humanoidverse.agents.ppo_hist.ppo_hist.PPOHistoryEncoder`, plus the `module_dict` and
+  VAE hyperparameters below.
+- `config/obs/loco/leggedloco_obs_history_encoder.yaml` — copy of the obs config below.
+- `config/exp/locomotion_history_encoder.yaml` — copy of `exp/locomotion.yaml` pointing at
+  the new algo + obs.
 
 **New obs config** (copy of `config/obs/loco/leggedloco_obs_history_wolinvel.yaml`):
 - `actor_obs`: remove `short_history` → `[base_ang_vel, projected_gravity, command_lin_vel, command_ang_vel, command_stand, dof_pos, dof_vel, actions]`.
@@ -141,6 +173,7 @@ during rollout fill `next_obs_target[t]` with the post-step proprio, masked by `
 - Privileged env-parameter regression (friction/mass/terrain).
 - Recurrent (GRU/LSTM) or 1D-CNN encoders (may revisit if history length grows).
 - Non-locomotion tasks (motion_tracking, delta-a).
+- Any edit to existing training code or configs (see §2.1 — strictly additive/duplicated).
 
 ## 9. Success Criteria
 
