@@ -52,3 +52,14 @@ class StatePredictor(nn.Module):
 
     def forward(self, z):
         return self.net(z)
+
+
+def vae_kl_loss(mu, logvar):
+    return -0.5 * torch.mean(torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1))
+
+
+def recon_loss_masked(pred, target, valid_mask):
+    per_sample = ((pred - target) ** 2).mean(dim=-1)   # (B,)
+    w = valid_mask.reshape(-1).to(per_sample.dtype)
+    denom = torch.clamp(w.sum(), min=1.0)
+    return (per_sample * w).sum() / denom
