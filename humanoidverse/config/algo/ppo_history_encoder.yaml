@@ -30,6 +30,7 @@ algo:
     # ---- history-encoder additions ----
     latent_dim: 16
     vae_beta: 0.01   # 1.0 은 KL 압력 과다 -> posterior collapse (311k run 에서 vae_kl 4e-7 로 붕괴)
+    vae_free_bits: 0.1   # 차원당 KL floor (nats). 이하 차원은 KL grad 0 -> collapse 차단. 0.0 = 비활성
     recon_coef: 1.0
     encoder_obs_key: encoder_obs
     recon_target_key: recon_target

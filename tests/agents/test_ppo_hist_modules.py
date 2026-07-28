@@ -130,3 +130,19 @@ def test_inference_wrapper_matches_act_inference():
     ref = actor.act_inference(ao, eo)
     got = wrap(torch.cat([ao, eo], dim=-1))
     assert torch.allclose(ref, got, atol=1e-6)
+
+
+def test_vae_kl_free_bits_floor_and_grad_block():
+    from humanoidverse.agents.modules.ppo_hist_modules import vae_kl_loss
+    mu = torch.zeros(4, 16)
+    logvar = torch.zeros(4, 16)              # true KL = 0 (posterior == prior)
+    out = vae_kl_loss(mu, logvar, free_bits=0.1)
+    assert torch.allclose(out, torch.tensor(16 * 0.1))   # floor: dim 당 0.1 로 클램프
+    # floor 이하 차원은 KL 그래디언트가 차단되어야 함
+    mu = torch.zeros(4, 16, requires_grad=True)
+    vae_kl_loss(mu, torch.zeros(4, 16), free_bits=0.1).backward()
+    assert torch.all(mu.grad == 0)
+    # free_bits=0 (기본) 은 기존 동작과 동일해야 함
+    m, lv = torch.randn(8, 16), torch.randn(8, 16)
+    legacy = -0.5 * torch.mean(torch.sum(1 + lv - m.pow(2) - lv.exp(), dim=-1))
+    assert torch.allclose(vae_kl_loss(m, lv), legacy, atol=1e-6)

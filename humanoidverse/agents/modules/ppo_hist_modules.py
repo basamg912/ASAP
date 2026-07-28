@@ -120,8 +120,14 @@ class StatePredictor(nn.Module):
         return self.net(z)
 
 
-def vae_kl_loss(mu, logvar):
-    return -0.5 * torch.mean(torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1))
+def vae_kl_loss(mu, logvar, free_bits=0.0):
+    # free bits (Kingma et al., IAF): 차원당 배치평균 KL 이 floor(λ) 이하면 clamp 되어
+    # 그래디언트가 0 -> KL 압력이 posterior 를 prior 로 붕괴시키는 것을 구조적으로 차단
+    kl_per_dim = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())  # [B, L]
+    kl_dim = kl_per_dim.mean(dim=0)                              # [L]
+    if free_bits > 0.0:
+        kl_dim = torch.clamp(kl_dim, min=free_bits)
+    return kl_dim.sum()
 
 
 def recon_loss_masked(pred, target, valid_mask):

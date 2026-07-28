@@ -18,6 +18,7 @@ class PPOHistoryEncoder(PPO):
         super()._init_config()
         self.latent_dim = self.config.latent_dim
         self.vae_beta = self.config.vae_beta
+        self.vae_free_bits = self.config.get('vae_free_bits', 0.0)
         self.recon_coef = self.config.recon_coef
         self.encoder_obs_key = self.config.encoder_obs_key
         self.recon_target_key = self.config.recon_target_key
@@ -189,7 +190,7 @@ class PPOHistoryEncoder(PPO):
         target_next = policy_state_dict['next_obs_target']
         valid_mask = (~policy_state_dict['dones'].bool()).float()
         recon_loss = recon_loss_masked(pred_next, target_next, valid_mask)
-        kl_vae = vae_kl_loss(latent['mu'], latent['logvar'])
+        kl_vae = vae_kl_loss(latent['mu'], latent['logvar'], self.vae_free_bits)
 
         actor_loss = (surrogate_loss - self.entropy_coef * entropy_loss
                       + self.recon_coef * recon_loss + self.vae_beta * kl_vae)
