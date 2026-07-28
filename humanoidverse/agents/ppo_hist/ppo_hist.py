@@ -22,6 +22,21 @@ class PPOHistoryEncoder(PPO):
         self.encoder_obs_key = self.config.encoder_obs_key
         self.recon_target_key = self.config.recon_target_key
 
+        obs_cfg = self.env.config.obs
+        aux = {}
+        for comp in obs_cfg.obs_dict[self.encoder_obs_key]:
+            if comp in obs_cfg.obs_auxiliary:
+                aux.update(dict(obs_cfg.obs_auxiliary[comp]))
+        keys = sorted(aux.keys())
+        lengths = [aux[k] for k in keys]
+        assert len(set(lengths)) == 1, "encoder history lengths differ"
+        self.encoder_struct = {
+            "keys" : keys,
+            "num_keys" : len(keys),
+            "history_length" : lengths[0],
+            "key_dims" : [obs_cfg.obs_dims[k] for k in keys],
+            "per_step_dim" : sum(obs_cfg.obs_dims[k] for k in keys),
+        }
     # ---- add VAE keys so _training_step averages + _logging_to_writer emits them ----
     def _init_loss_dict_at_training_step(self):
         loss_dict = super()._init_loss_dict_at_training_step()
@@ -40,6 +55,7 @@ class PPOHistoryEncoder(PPO):
             encoder_config=self.config.encoder_config,
             decoder_config=self.config.decoder_config,
             latent_dim=self.latent_dim,
+            encoder_struct=self.encoder_struct
         ).to(self.device)
         self.critic = PPOCritic(self.algo_obs_dim_dict,
                                 self.config.module_dict.critic).to(self.device)

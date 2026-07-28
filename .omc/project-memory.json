@@ -10,7 +10,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /home/kist/work/workspace/ACM/ASAP\necho \"=== new commit ===\"; git log --oneline ed332f3..HEAD\necho \"=== changed files ===\"; git show --stat HEAD | tail -8\necho \"=== did commit touch existing eval_agent.py? (should NOT) ===\"; git show --stat HEAD | grep -E \"eval_agent.py$\" && echo \"!!! WARNING edited existing eval_agent.py\" || echo \"OK: existing eval_agent.py untouched\"\necho \"=== strays? ===\"; git status --porcelain | grep '^??' | grep -v '.omc/' || echo \"(none)\"\necho \"=== full test suite ===\"; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/kist/anaconda3/envs/hvgym/bin/python -m pytest tests/agents/test_ppo_hist_modules.py 2>&1 | tail -4\necho \"=== import + parse checks ===\"; /home/kist/anaconda3/envs/hvgym/bin/python -c \"from humanoidverse.agents.ppo_hist.ppo_hist import PPOHistoryEncoder; print('agent import OK')\" 2>&1 | tail -2\n/home/kist/anaconda3/envs/hvgym/bin/python -c \"from humanoidverse.agents.ppo_hist.inference_wrapper import HistEncoderInferenceModule; print('wrapper import OK')\" 2>&1 | tail -2\n/home/kist/anaconda3/envs/hvgym/bin/python -c \"import ast; ast.parse(open('humanoidverse/eval_agent_hist.py').read()); print('eval_agent_hist parse OK')\" 2>&1 | tail -2",
+    "testCommand": "cd /home/kist/work/workspace/ACM/ASAP\necho \"=== algo config 핵심 값 ===\"\ngrep -nE \"vae_beta|recon_coef|latent_dim|entropy_coef|init_noise_std|hidden_dims|type:\" humanoidverse/config/algo/ppo_history_encoder.yaml\necho\necho \"=== 테스트 상태 (mixer 반영 후) ===\"\nPYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/kist/anaconda3/envs/hvgym/bin/python -m pytest tests/agents/test_ppo_hist_modules.py -q 2>&1 | tail -2",
     "lintCommand": null,
     "devCommand": null,
     "scripts": {}
@@ -197,6 +197,12 @@
   },
   "hotPaths": [
     {
+      "path": "docs/superpowers/plans/2026-07-24-history-encoder-vae.md",
+      "accessCount": 10,
+      "lastAccessed": 1784878587565,
+      "type": "file"
+    },
+    {
       "path": "humanoidverse/agents/modules/ppo_hist_modules.py",
       "accessCount": 9,
       "lastAccessed": 1784872866343,
@@ -209,15 +215,15 @@
       "type": "file"
     },
     {
-      "path": "docs/superpowers/plans/2026-07-24-history-encoder-vae.md",
+      "path": ".superpowers/sdd/progress.md",
       "accessCount": 8,
-      "lastAccessed": 1784872538575,
+      "lastAccessed": 1784878591136,
       "type": "file"
     },
     {
-      "path": ".superpowers/sdd/progress.md",
-      "accessCount": 7,
-      "lastAccessed": 1784873165193,
+      "path": "humanoidverse/config/algo/ppo_history_encoder.yaml",
+      "accessCount": 6,
+      "lastAccessed": 1785205540881,
       "type": "file"
     },
     {
@@ -227,21 +233,15 @@
       "type": "file"
     },
     {
-      "path": "humanoidverse/config/algo/ppo_history_encoder.yaml",
+      "path": "humanoidverse/config/obs/loco/leggedloco_obs_history_encoder.yaml",
       "accessCount": 5,
-      "lastAccessed": 1784872906761,
+      "lastAccessed": 1784878511504,
       "type": "file"
     },
     {
       "path": "humanoidverse/agents/ppo_hist/ppo_hist.py",
       "accessCount": 4,
       "lastAccessed": 1784872950605,
-      "type": "file"
-    },
-    {
-      "path": "humanoidverse/config/obs/loco/leggedloco_obs_history_encoder.yaml",
-      "accessCount": 3,
-      "lastAccessed": 1784872304020,
       "type": "file"
     },
     {
@@ -281,21 +281,27 @@
       "type": "file"
     },
     {
+      "path": "humanoidverse/envs/legged_base_task/legged_robot_base.py",
+      "accessCount": 2,
+      "lastAccessed": 1784878454197,
+      "type": "file"
+    },
+    {
       "path": "humanoidverse/envs/locomotion/locomotion.py",
-      "accessCount": 1,
-      "lastAccessed": 1784779467669,
+      "accessCount": 2,
+      "lastAccessed": 1785199901977,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/rewards/loco/reward_kapex_locomotion.yaml",
+      "accessCount": 2,
+      "lastAccessed": 1785199905204,
       "type": "file"
     },
     {
       "path": "humanoidverse/config/robot/kapex/kapex_31dof.yaml",
       "accessCount": 1,
       "lastAccessed": 1784779468694,
-      "type": "file"
-    },
-    {
-      "path": "humanoidverse/envs/legged_base_task/legged_robot_base.py",
-      "accessCount": 1,
-      "lastAccessed": 1784779614869,
       "type": "file"
     },
     {

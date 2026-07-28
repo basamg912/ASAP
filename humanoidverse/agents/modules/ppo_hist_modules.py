@@ -22,9 +22,75 @@ class MLP(nn.Module):
     def forward(self, x):
         return self.net(x)
 
+class MLP_mixer(nn.Module):
+    def __init__(self, feature_dim, channel_dim, output_dim, hidden_dims, activation="ELU"):
+        super().__init__()
+        self.ln = nn.LayerNorm(feature_dim)
+        self.ln2 = nn.LayerNorm(feature_dim)
+        self.act = getattr(nn, activation)()
+        # Feature mixing
+        self.feature_layer = [nn.Linear(feature_dim, hidden_dims[0]), self.act]
+        for l in range(len(hidden_dims)):
+            if l == len(hidden_dims) - 1:
+                self.feature_layer.append(nn.Linear(hidden_dims[l], feature_dim))
+            else:
+                self.feature_layer += [nn.Linear(hidden_dims[l], hidden_dims[l + 1]), self.act]
+        self.feature_mixing = nn.Sequential(*self.feature_layer)
+
+        # Channel mixing
+        self.channel_layer = [nn.Linear(channel_dim, hidden_dims[0]), self.act]
+        for l in range(len(hidden_dims)):
+            if l == len(hidden_dims) - 1:
+                self.channel_layer.append(nn.Linear(hidden_dims[l], channel_dim))
+            else:
+                self.channel_layer += [nn.Linear(hidden_dims[l], hidden_dims[l + 1]), self.act]
+        self.channel_mixing = nn.Sequential(*self.channel_layer)
+
+        # Output
+        self.output_layer = nn.Linear(channel_dim * feature_dim, output_dim)
+
+    def forward(self, x):
+        # input shape [B, History_length, Obs_dims(Feature)]
+        y = self.feature_mixing(self.ln(x))
+        x = x + y
+        y = self.ln2(x).transpose(1,2)
+        y = self.channel_mixing(y)
+        x = x + y.transpose(1,2)
+        x = x.flatten(1)
+        return self.output_layer(x)
+
+# TODO : MLP-mixer 버전으로 수정
+# (1) MLP 모듈 내부 init/forward 수정
+# (2) forward 부분 이해
+class HistoryEncoderMixer(nn.Module):
+    def __init__(self, history_dim, latent_dim, hidden_dims=(256,), activation="ELU",
+        key_dims=None, num_keys=None, history_length=None):
+        super().__init__()
+        self.latent_dim = latent_dim
+        assert history_dim == sum(key_dims) * history_length
+        self.net = MLP_mixer(sum(key_dims), history_length, 2 * latent_dim, list(hidden_dims), activation)
+        self.key_dims = key_dims
+        self.num_keys = num_keys
+        self.history_length = history_length
+
+    def forward(self, history):
+        x = unflatten_history(history, self.key_dims, self.history_length)
+        out = self.net(x)
+        mu = out[..., : self.latent_dim]
+        logvar = out[..., self.latent_dim :]
+        return mu, logvar
+
+    def sample(self, history):
+        mu, logvar = self.forward(history)
+        if self.training:
+            std = torch.exp(0.5 * logvar)
+            z = mu + std * torch.randn_like(std)
+        else:
+            z = mu
+        return z, mu, logvar
 
 class HistoryEncoder(nn.Module):
-    def __init__(self, history_dim, latent_dim, hidden_dims=(256, 128), activation="ELU"):
+    def __init__(self, history_dim, latent_dim, hidden_dims=(256, 128), activation="ELU", encoder_struct=None):
         super().__init__()
         self.latent_dim = latent_dim
         self.net = MLP(history_dim, 2 * latent_dim, list(hidden_dims), activation)
@@ -67,16 +133,24 @@ def recon_loss_masked(pred, target, valid_mask):
 
 class PPOActorWithHistoryEncoder(PPOActor):
     def __init__(self, obs_dim_dict, module_config_dict, num_actions, init_noise_std,
-                 encoder_config, decoder_config, latent_dim):
+                 encoder_config, decoder_config, latent_dim, encoder_struct):
         # base builds the actor trunk from module_config_dict; input_dim must already
         # include the numeric latent_dim, e.g. ["actor_obs", 16]
         super().__init__(obs_dim_dict, module_config_dict, num_actions, init_noise_std)
         self.latent_dim = latent_dim
-        history_dim = obs_dim_dict[encoder_config["input_key"]]
+        history_dim = obs_dim_dict[encoder_config["input_key"]] # history : pre_process_config 에서 해석, int
         recon_dim = obs_dim_dict[decoder_config["target_key"]]
-        self.history_encoder = HistoryEncoder(
+
+        self.s = encoder_struct
+        self.key_dims = self.s["key_dims"]
+        self.num_keys = self.s["num_keys"]
+        self.history_length = self.s["history_length"]
+
+        self.history_encoder = HistoryEncoderMixer( # config 에 정의한 [history] 통해 접근
             history_dim, latent_dim,
-            tuple(encoder_config["hidden_dims"]), encoder_config["activation"])
+            tuple(encoder_config["hidden_dims"]), encoder_config["activation"],
+            self.key_dims, self.num_keys, self.history_length
+        )
         self.state_predictor = StatePredictor(
             latent_dim, recon_dim,
             tuple(decoder_config["hidden_dims"]), decoder_config["activation"])
@@ -87,6 +161,7 @@ class PPOActorWithHistoryEncoder(PPOActor):
         self._last_latent = {"z": z, "mu": mu, "logvar": logvar}
         return z
 
+    # TODO : action sampling 부분
     def update_distribution(self, actor_obs, encoder_obs):
         z = self._encode(encoder_obs)
         mean = self.actor(torch.cat([actor_obs, z], dim=-1))
@@ -98,10 +173,18 @@ class PPOActorWithHistoryEncoder(PPOActor):
 
     def act_inference(self, actor_obs, encoder_obs):
         z, _, _ = self.history_encoder.sample(encoder_obs)  # eval mode -> z = mu
-        return self.actor(torch.cat([actor_obs, z], dim=-1))
+        return self.actor(torch.cat([actor_obs, z], dim=-1)) # module (MLP policy) forward 통과
 
     def predict_next_state(self):
         return self.state_predictor(self._last_latent["z"])
 
     def get_latent_stats(self):
         return self._last_latent
+
+def unflatten_history(flat, key_dims, T, chronological=False):
+    N = flat.shape[0] # Batch size
+    chunks = torch.split(flat, [d * T for d in key_dims], dim=1)
+    seq = torch.cat([c.view(N, T, d) for c,d in zip(chunks, key_dims)], dim=-1)
+    if chronological:
+        seq = seq.flip(1)
+    return seq

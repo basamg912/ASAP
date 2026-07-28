@@ -29,7 +29,7 @@ algo:
 
     # ---- history-encoder additions ----
     latent_dim: 16
-    vae_beta: 1.0
+    vae_beta: 0.01   # 1.0 은 KL 압력 과다 -> posterior collapse (311k run 에서 vae_kl 4e-7 로 붕괴)
     recon_coef: 1.0
     encoder_obs_key: encoder_obs
     recon_target_key: recon_target

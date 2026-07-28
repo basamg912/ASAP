@@ -267,7 +267,7 @@ class LeggedRobotBase(BaseTask):
             self.obs_buf_dict[obs_key] = torch.clip(obs_val, -clip_obs, clip_obs)
 
         for key in self.history_handler.history.keys():
-            self.history_handler.add(key, self.hist_obs_dict[key])
+            self.history_handler.add(key, self.hist_obs_dict[key]) # history 는 0번째, 앞으로 추가됨
 
         self.extras["to_log"] = self.log_dict
         if self.viewer:
@@ -896,11 +896,14 @@ class LeggedRobotBase(BaseTask):
         history_key_list = history_config.keys()
         history_tensors = []
         for key in sorted(history_config.keys()):
-            history_length = history_config[key]
+            history_length = history_config[key] # sequence length = 5
+            # [4096, buffer_length, obs_dim] -> [4096, 5, obs_dim], history 는 앞이 최신
             history_tensor = self.history_handler.query(key)[:, :history_length]
             history_tensor = history_tensor.reshape(history_tensor.shape[0], -1)  # Shape: [4096, history_length*obs_dim]
             history_tensors.append(history_tensor)
-        return torch.cat(history_tensors, dim=1)
+        # history_length 에는 [4096, history_length*obs_dim_keys] 가 list 로 쌓인 상태
+        return torch.cat(history_tensors, dim=1) # 4096 축은 고정, history_length*obs_dim 축이 합쳐짐
+
 
     def _get_obs_short_history(self,):
         assert "short_history" in self.config.obs.obs_auxiliary.keys()

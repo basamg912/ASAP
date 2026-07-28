@@ -82,16 +82,18 @@ def _make_actor():
     })
     enc_cfg = {"input_key": "encoder_obs", "hidden_dims": [64, 32], "activation": "ELU"}
     dec_cfg = {"target_key": "recon_target", "hidden_dims": [32, 64], "activation": "ELU"}
+    encoder_struct = {"key_dims": [5,3], "num_keys": 2, "history_length": 5} # encoder obs 와 동일, 8*5
     return PPOActorWithHistoryEncoder(obs_dim_dict, module_config_dict, num_actions=8,
                                       init_noise_std=0.5, encoder_config=enc_cfg,
-                                      decoder_config=dec_cfg, latent_dim=latent_dim), latent_dim
+                                      decoder_config=dec_cfg, latent_dim=latent_dim,
+                                      encoder_struct=encoder_struct), latent_dim
 
 
 def test_actor_act_shapes_and_latent_stash():
     torch.manual_seed(0)
     actor, L = _make_actor()
     actor.train()
-    a = actor.act(torch.randn(4, 30), torch.randn(4, 40))
+    a = actor.act(torch.randn(4, 30), torch.randn(4, 40)) # batch size = 4
     assert a.shape == (4, 8)
     stats = actor.get_latent_stats()
     assert stats["mu"].shape == (4, L)

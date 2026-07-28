@@ -279,6 +279,13 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         hip_pos = self.simulator.dof_pos[:, hips_roll_yaw_indices]
         return torch.sum(torch.square(hip_pos), dim=1)
 
+    def _reward_penalty_waist_pos(self):
+        # 허리(waist_dof_names) 관절이 default 에서 벗어나면 벌점 — 몸통 yaw 비틀림 방지.
+        # penalty_torso_ori(중력 기반)는 yaw 불변이라 허리 비틀림을 못 잡음
+        waist_pos = self.simulator.dof_pos[:, self.waist_dof_indices]
+        waist_default = self.default_dof_pos[:, self.waist_dof_indices]
+        return torch.sum(torch.square(waist_pos - waist_default), dim=1)
+
     def _reward_penalty_torso_ori(self):
         # 몸통(torso_name 링크)이 직립에서 기울어지면 벌점.
         # KAPEX WL3는 직립 시 프레임 z축이 월드 +y를 향하므로(z-up 아님)

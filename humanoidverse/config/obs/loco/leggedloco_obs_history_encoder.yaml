@@ -27,6 +27,8 @@ obs:
       actions,
       short_history
     ]
+    # parse_observation 에서 `get_obs_history()` 함수 실행
+    # obs_dict[encoder_obs] 가 obs_auxiliary 의 history 로 채워짐
     encoder_obs: [ history ]
     recon_target: [
       base_ang_vel,
