@@ -1,0 +1,7 @@
+# @package _global_
+
+defaults:
+  - /algo: ppo_lowerbody
+  - /env: locomotion
+
+experiment_name: Locomotion_LowerBody

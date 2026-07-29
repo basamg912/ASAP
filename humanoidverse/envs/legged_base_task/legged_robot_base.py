@@ -92,6 +92,10 @@ class LeggedRobotBase(BaseTask):
         self.add_noise_currculum = self.config.obs.add_noise_currculum
         self.current_noise_curriculum_value = self.config.obs.noise_initial_value
 
+        # for training history_encoder
+        self.last_dof_acc = None
+        self.last_base_acc = None
+
     def _domain_rand_config(self):
         if self.config.domain_rand.push_robots:
             self.push_interval_s = torch.randint(self.config.domain_rand.push_interval_s[0], self.config.domain_rand.push_interval_s[1], (self.num_envs,), device=self.device)
@@ -282,7 +286,7 @@ class LeggedRobotBase(BaseTask):
     def _setup_simulator_control(self):
         pass
 
-    def _pre_compute_observations_callback(self):
+    def _pre_compute_observations_callback(self): # Base 에 대해 계산, 이후 push / termination / reward 등 계산
         # prepare quantities
         self.base_quat[:] = self.simulator.base_quat[:]
         self.rpy[:] = get_euler_xyz_in_tensor(self.base_quat[:])
@@ -676,6 +680,9 @@ class LeggedRobotBase(BaseTask):
     def _reward_termination(self):
         # Terminal reward / penalty
         return self.reset_buf * ~self.time_out_buf
+    def _reward_alive(self):
+        # Alive reward
+        return ~self.reset_buf * ~self.time_out_buf
 
     def _reward_penalty_torques(self):
         # Penalize torques

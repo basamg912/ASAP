@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-07-24T06:04:58.167Z",
+  "updatedAt": "2026-07-28T04:41:18.197Z",
   "missions": [
     {
       "id": "session:f9b87f0d-368f-4300-ba8d-c2a161d6f160:none",
@@ -186,6 +186,298 @@
           "agent": "general-purpose:a1bd718",
           "detail": "completed",
           "sourceKey": "session-stop:a1bd7186c8d65c70e"
+        }
+      ]
+    },
+    {
+      "id": "session:6ea83a89-1197-4cfa-9818-4651f440b020:none",
+      "source": "session",
+      "name": "none",
+      "objective": "Session mission",
+      "createdAt": "2026-07-28T04:38:11.798Z",
+      "updatedAt": "2026-07-28T04:41:18.197Z",
+      "status": "done",
+      "workerCount": 3,
+      "taskCounts": {
+        "total": 3,
+        "pending": 0,
+        "blocked": 0,
+        "inProgress": 0,
+        "completed": 3,
+        "failed": 0
+      },
+      "agents": [
+        {
+          "name": "Explore:a58f831",
+          "role": "Explore",
+          "ownership": "a58f831112ed55340",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-28T04:40:01.518Z"
+        },
+        {
+          "name": "Explore:a85dc42",
+          "role": "Explore",
+          "ownership": "a85dc42e63e7cf250",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-28T04:40:41.101Z"
+        },
+        {
+          "name": "Explore:a93bd4d",
+          "role": "Explore",
+          "ownership": "a93bd4d10273fd2b3",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-28T04:41:18.197Z"
+        }
+      ],
+      "timeline": [
+        {
+          "id": "session-start:a58f831112ed55340:2026-07-28T04:38:11.798Z",
+          "at": "2026-07-28T04:38:11.798Z",
+          "kind": "update",
+          "agent": "Explore:a58f831",
+          "detail": "started Explore:a58f831",
+          "sourceKey": "session-start:a58f831112ed55340"
+        },
+        {
+          "id": "session-start:a85dc42e63e7cf250:2026-07-28T04:38:53.536Z",
+          "at": "2026-07-28T04:38:53.536Z",
+          "kind": "update",
+          "agent": "Explore:a85dc42",
+          "detail": "started Explore:a85dc42",
+          "sourceKey": "session-start:a85dc42e63e7cf250"
+        },
+        {
+          "id": "session-start:a93bd4d10273fd2b3:2026-07-28T04:39:14.763Z",
+          "at": "2026-07-28T04:39:14.763Z",
+          "kind": "update",
+          "agent": "Explore:a93bd4d",
+          "detail": "started Explore:a93bd4d",
+          "sourceKey": "session-start:a93bd4d10273fd2b3"
+        },
+        {
+          "id": "session-stop:a58f831112ed55340:2026-07-28T04:39:25.629Z",
+          "at": "2026-07-28T04:39:25.629Z",
+          "kind": "completion",
+          "agent": "Explore:a58f831",
+          "detail": "completed",
+          "sourceKey": "session-stop:a58f831112ed55340"
+        },
+        {
+          "id": "session-stop:a58f831112ed55340:2026-07-28T04:39:39.691Z",
+          "at": "2026-07-28T04:39:39.691Z",
+          "kind": "completion",
+          "agent": "Explore:a58f831",
+          "detail": "completed",
+          "sourceKey": "session-stop:a58f831112ed55340"
+        },
+        {
+          "id": "session-stop:a58f831112ed55340:2026-07-28T04:39:42.871Z",
+          "at": "2026-07-28T04:39:42.871Z",
+          "kind": "completion",
+          "agent": "Explore:a58f831",
+          "detail": "completed",
+          "sourceKey": "session-stop:a58f831112ed55340"
+        },
+        {
+          "id": "session-stop:a58f831112ed55340:2026-07-28T04:39:45.954Z",
+          "at": "2026-07-28T04:39:45.954Z",
+          "kind": "completion",
+          "agent": "Explore:a58f831",
+          "detail": "completed",
+          "sourceKey": "session-stop:a58f831112ed55340"
+        },
+        {
+          "id": "session-stop:a58f831112ed55340:2026-07-28T04:39:50.103Z",
+          "at": "2026-07-28T04:39:50.103Z",
+          "kind": "completion",
+          "agent": "Explore:a58f831",
+          "detail": "completed",
+          "sourceKey": "session-stop:a58f831112ed55340"
+        },
+        {
+          "id": "session-stop:a58f831112ed55340:2026-07-28T04:39:53.504Z",
+          "at": "2026-07-28T04:39:53.504Z",
+          "kind": "completion",
+          "agent": "Explore:a58f831",
+          "detail": "completed",
+          "sourceKey": "session-stop:a58f831112ed55340"
+        },
+        {
+          "id": "session-stop:a58f831112ed55340:2026-07-28T04:39:56.180Z",
+          "at": "2026-07-28T04:39:56.180Z",
+          "kind": "completion",
+          "agent": "Explore:a58f831",
+          "detail": "completed",
+          "sourceKey": "session-stop:a58f831112ed55340"
+        },
+        {
+          "id": "session-stop:a85dc42e63e7cf250:2026-07-28T04:39:56.474Z",
+          "at": "2026-07-28T04:39:56.474Z",
+          "kind": "completion",
+          "agent": "Explore:a85dc42",
+          "detail": "completed",
+          "sourceKey": "session-stop:a85dc42e63e7cf250"
+        },
+        {
+          "id": "session-stop:a58f831112ed55340:2026-07-28T04:39:59.168Z",
+          "at": "2026-07-28T04:39:59.168Z",
+          "kind": "completion",
+          "agent": "Explore:a58f831",
+          "detail": "completed",
+          "sourceKey": "session-stop:a58f831112ed55340"
+        },
+        {
+          "id": "session-stop:a58f831112ed55340:2026-07-28T04:40:01.518Z",
+          "at": "2026-07-28T04:40:01.518Z",
+          "kind": "completion",
+          "agent": "Explore:a58f831",
+          "detail": "completed",
+          "sourceKey": "session-stop:a58f831112ed55340"
+        },
+        {
+          "id": "session-stop:a85dc42e63e7cf250:2026-07-28T04:40:08.108Z",
+          "at": "2026-07-28T04:40:08.108Z",
+          "kind": "completion",
+          "agent": "Explore:a85dc42",
+          "detail": "completed",
+          "sourceKey": "session-stop:a85dc42e63e7cf250"
+        },
+        {
+          "id": "session-stop:a85dc42e63e7cf250:2026-07-28T04:40:14.797Z",
+          "at": "2026-07-28T04:40:14.797Z",
+          "kind": "completion",
+          "agent": "Explore:a85dc42",
+          "detail": "completed",
+          "sourceKey": "session-stop:a85dc42e63e7cf250"
+        },
+        {
+          "id": "session-stop:a85dc42e63e7cf250:2026-07-28T04:40:21.375Z",
+          "at": "2026-07-28T04:40:21.375Z",
+          "kind": "completion",
+          "agent": "Explore:a85dc42",
+          "detail": "completed",
+          "sourceKey": "session-stop:a85dc42e63e7cf250"
+        },
+        {
+          "id": "session-stop:a85dc42e63e7cf250:2026-07-28T04:40:25.311Z",
+          "at": "2026-07-28T04:40:25.311Z",
+          "kind": "completion",
+          "agent": "Explore:a85dc42",
+          "detail": "completed",
+          "sourceKey": "session-stop:a85dc42e63e7cf250"
+        },
+        {
+          "id": "session-stop:a85dc42e63e7cf250:2026-07-28T04:40:28.106Z",
+          "at": "2026-07-28T04:40:28.106Z",
+          "kind": "completion",
+          "agent": "Explore:a85dc42",
+          "detail": "completed",
+          "sourceKey": "session-stop:a85dc42e63e7cf250"
+        },
+        {
+          "id": "session-stop:a93bd4d10273fd2b3:2026-07-28T04:40:30.964Z",
+          "at": "2026-07-28T04:40:30.964Z",
+          "kind": "completion",
+          "agent": "Explore:a93bd4d",
+          "detail": "completed",
+          "sourceKey": "session-stop:a93bd4d10273fd2b3"
+        },
+        {
+          "id": "session-stop:a85dc42e63e7cf250:2026-07-28T04:40:31.686Z",
+          "at": "2026-07-28T04:40:31.686Z",
+          "kind": "completion",
+          "agent": "Explore:a85dc42",
+          "detail": "completed",
+          "sourceKey": "session-stop:a85dc42e63e7cf250"
+        },
+        {
+          "id": "session-stop:a85dc42e63e7cf250:2026-07-28T04:40:38.052Z",
+          "at": "2026-07-28T04:40:38.052Z",
+          "kind": "completion",
+          "agent": "Explore:a85dc42",
+          "detail": "completed",
+          "sourceKey": "session-stop:a85dc42e63e7cf250"
+        },
+        {
+          "id": "session-stop:a93bd4d10273fd2b3:2026-07-28T04:40:39.597Z",
+          "at": "2026-07-28T04:40:39.597Z",
+          "kind": "completion",
+          "agent": "Explore:a93bd4d",
+          "detail": "completed",
+          "sourceKey": "session-stop:a93bd4d10273fd2b3"
+        },
+        {
+          "id": "session-stop:a85dc42e63e7cf250:2026-07-28T04:40:41.101Z",
+          "at": "2026-07-28T04:40:41.101Z",
+          "kind": "completion",
+          "agent": "Explore:a85dc42",
+          "detail": "completed",
+          "sourceKey": "session-stop:a85dc42e63e7cf250"
+        },
+        {
+          "id": "session-stop:a93bd4d10273fd2b3:2026-07-28T04:40:47.879Z",
+          "at": "2026-07-28T04:40:47.879Z",
+          "kind": "completion",
+          "agent": "Explore:a93bd4d",
+          "detail": "completed",
+          "sourceKey": "session-stop:a93bd4d10273fd2b3"
+        },
+        {
+          "id": "session-stop:a93bd4d10273fd2b3:2026-07-28T04:40:56.599Z",
+          "at": "2026-07-28T04:40:56.599Z",
+          "kind": "completion",
+          "agent": "Explore:a93bd4d",
+          "detail": "completed",
+          "sourceKey": "session-stop:a93bd4d10273fd2b3"
+        },
+        {
+          "id": "session-stop:a93bd4d10273fd2b3:2026-07-28T04:41:03.834Z",
+          "at": "2026-07-28T04:41:03.834Z",
+          "kind": "completion",
+          "agent": "Explore:a93bd4d",
+          "detail": "completed",
+          "sourceKey": "session-stop:a93bd4d10273fd2b3"
+        },
+        {
+          "id": "session-stop:a93bd4d10273fd2b3:2026-07-28T04:41:10.380Z",
+          "at": "2026-07-28T04:41:10.380Z",
+          "kind": "completion",
+          "agent": "Explore:a93bd4d",
+          "detail": "completed",
+          "sourceKey": "session-stop:a93bd4d10273fd2b3"
+        },
+        {
+          "id": "session-stop:a93bd4d10273fd2b3:2026-07-28T04:41:12.912Z",
+          "at": "2026-07-28T04:41:12.912Z",
+          "kind": "completion",
+          "agent": "Explore:a93bd4d",
+          "detail": "completed",
+          "sourceKey": "session-stop:a93bd4d10273fd2b3"
+        },
+        {
+          "id": "session-stop:a93bd4d10273fd2b3:2026-07-28T04:41:15.602Z",
+          "at": "2026-07-28T04:41:15.602Z",
+          "kind": "completion",
+          "agent": "Explore:a93bd4d",
+          "detail": "completed",
+          "sourceKey": "session-stop:a93bd4d10273fd2b3"
+        },
+        {
+          "id": "session-stop:a93bd4d10273fd2b3:2026-07-28T04:41:18.197Z",
+          "at": "2026-07-28T04:41:18.197Z",
+          "kind": "completion",
+          "agent": "Explore:a93bd4d",
+          "detail": "completed",
+          "sourceKey": "session-stop:a93bd4d10273fd2b3"
         }
       ]
     }

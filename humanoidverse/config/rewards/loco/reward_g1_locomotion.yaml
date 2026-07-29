@@ -31,10 +31,10 @@ rewards:
       # penalty_in_the_air: -100.0
       # feet_max_height_for_this_air: -100.0
       upperbody_joint_angle_freeze: -0.2
+      penalty_hip_pos: -1.0
       feet_heading_alignment: -0.3
       penalty_close_feet_xy: -10.
       penalty_ang_vel_xy_torso: -1.0
-      penalty_hip_pos: -1.0
 
 
   reward_tracking_sigma:
@@ -109,4 +109,3 @@ rewards:
     "penalty_close_feet_xy",
     "penalty_ang_vel_xy_torso",
     "penalty_hip_pos"]
-

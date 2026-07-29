@@ -29,7 +29,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.upper_right_arm_dof_indices = [self.dof_names.index(dof) for dof in self.upper_right_arm_dof_names]
         self.hips_dof_id = [self.simulator._body_list.index(link) - 1 for link in self.config.robot.motion.hips_link] # Yuanhang: -1 for the base link (pelvis)
         self.init_done = True
-    
+
     def _init_buffers(self):
         super()._init_buffers()
         self.commands = torch.zeros(
@@ -43,13 +43,13 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.b_swing = 0.5 # end of the swing phase
         self.a_stance = 0.5 # start of the stance phase
         self.b_stance = 1.0 # end of the stance phase
-        self.kappa = 4.0 # shared variance in Von Mises 
+        self.kappa = 4.0 # shared variance in Von Mises
         self.left_offset = 0.0 # left foot offset
         self.right_offset = 0.5 # right foot offset
-        
+
         self.left_feet_height = torch.zeros(self.num_envs, device=self.device) # left feet height
         self.right_feet_height = torch.zeros(self.num_envs, device=self.device) # right feet height
-        
+
         self.phase_time = torch.zeros(self.num_envs, dtype=torch.float32, requires_grad=False, device=self.device)
         self.phase_time_np = np.zeros(self.num_envs, dtype=np.float32)
         self.phase_left = (self.phase_time + self.left_offset) % 1
@@ -64,12 +64,12 @@ class LeggedRobotLocomotion(LeggedRobotBase):
                 self.T = 1. # gait period in seconds
         else:
             self.T = 1.
-        
+
         if hasattr(self.config.rewards, "gait_period"):
             # Randomize the gait phase time
             if self.config.obs.use_phase:
                 self.phi_offset = np.random.rand(self.num_envs)*self.T
-            else: 
+            else:
                 self.phi_offset = np.zeros(self.num_envs)
         else:
             self.phi_offset = np.zeros(self.num_envs)
@@ -79,7 +79,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.stance_arm_joint_pos = torch.tensor([0.757, 0.0, 0.0, 1.57,
                                                 0.0, 0.0, 0.0], device=self.device, dtype=torch.float, requires_grad=False)
         print("phi_offset: ", self.phi_offset)
-    
+
 
     def _setup_simulator_control(self):
         self.simulator.commands = self.commands
@@ -88,7 +88,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         """ Callback called before computing terminations, rewards, and observations
             Default behaviour: Compute ang vel command based on target and heading, compute measured terrain heights and randomly push robots
         """
-        # 
+        #
         super()._update_tasks_callback()
 
         # commands
@@ -98,11 +98,11 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         forward = quat_apply(self.base_quat, self.forward_vec)
         heading = torch.atan2(forward[:, 1], forward[:, 0])
         self.commands[:, 2] = torch.clip(
-            0.5 * wrap_to_pi(self.commands[:, 3] - heading), 
-            self.command_ranges["ang_vel_yaw"][0], 
+            0.5 * wrap_to_pi(self.commands[:, 3] - heading),
+            self.command_ranges["ang_vel_yaw"][0],
             self.command_ranges["ang_vel_yaw"][1]
         )
-    
+
     def _post_physics_step(self):
         super()._post_physics_step()
         self.update_phase_time()
@@ -114,7 +114,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.phase_left = (self.phase_time + self.left_offset) % 1
         self.phase_right = (self.phase_time + self.right_offset) % 1
         self.leg_phase = torch.cat([self.phase_left.unsqueeze(1), self.phase_right.unsqueeze(1)], dim=-1)
-    
+
     def _resample_commands(self, env_ids):
         self.commands[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=str(self.device)).squeeze(1)
         self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=str(self.device)).squeeze(1)
@@ -157,9 +157,9 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         # Tracking of linear velocity commands (xy axes)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
         return torch.exp(-lin_vel_error/self.config.rewards.reward_tracking_sigma.lin_vel)
-    
+
     def _reward_tracking_ang_vel(self):
-        # Tracking of angular velocity commands (yaw) 
+        # Tracking of angular velocity commands (yaw)
         ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
         return torch.exp(-ang_vel_error/self.config.rewards.reward_tracking_sigma.ang_vel)
 
@@ -168,17 +168,17 @@ class LeggedRobotLocomotion(LeggedRobotBase):
     def _reward_penalty_lin_vel_z(self):
         # Penalize z axis base linear velocity
         return torch.square(self.base_lin_vel[:, 2])
-    
+
     def _reward_penalty_ang_vel_xy(self):
         # Penalize xy axes base angular velocity
         return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
-    
+
     def _reward_penalty_ang_vel_xy_torso(self):
         # Penalize xy axes base angular velocity
 
         torso_ang_vel = quat_rotate_inverse(self.simulator._rigid_body_rot[:, self.torso_index], self.simulator._rigid_body_ang_vel[:, self.torso_index])
         return torch.sum(torch.square(torso_ang_vel[:, :2]), dim=1)
-    
+
 
     def _reward_penalty_feet_contact_forces(self):
         # penalize high contact forces
@@ -190,7 +190,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         # Reward long steps
         # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
         contact = self.simulator.contact_forces[:, self.feet_indices, 2] > 1.
-        contact_filt = torch.logical_or(contact, self.last_contacts) 
+        contact_filt = torch.logical_or(contact, self.last_contacts)
         self.last_contacts = contact
         first_contact = (self.feet_air_time > 0.) * contact_filt
         self.feet_air_time += self.dt
@@ -198,10 +198,10 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact_filt
         return rew_airTime
-    
+
     def _reward_penalty_in_the_air(self):
         contact = self.simulator.contact_forces[:, self.feet_indices, 2] > 1.
-        contact_filt = torch.logical_or(contact, self.last_contacts) 
+        contact_filt = torch.logical_or(contact, self.last_contacts)
         first_foot_contact = contact_filt[:,0]
         second_foot_contact = contact_filt[:,1]
         reward = ~(first_foot_contact | second_foot_contact)
@@ -224,40 +224,40 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         return torch.square(base_height - self.config.rewards.desired_base_height)
 
 
-    
+
     def _reward_feet_ori(self):
         left_quat = self.simulator._rigid_body_rot[:, self.feet_indices[0]]
         left_gravity = quat_rotate_inverse(left_quat, self.gravity_vec)
         right_quat = self.simulator._rigid_body_rot[:, self.feet_indices[1]]
         right_gravity = quat_rotate_inverse(right_quat, self.gravity_vec)
-        return torch.sum(torch.square(left_gravity[:, :2]), dim=1)**0.5 + torch.sum(torch.square(right_gravity[:, :2]), dim=1)**0.5 
+        return torch.sum(torch.square(left_gravity[:, :2]), dim=1)**0.5 + torch.sum(torch.square(right_gravity[:, :2]), dim=1)**0.5
 
     def _reward_penalty_feet_slippage(self):
         # assert self.simulator._rigid_body_vel.shape[1] == 20
         foot_vel = self.simulator._rigid_body_vel[:, self.feet_indices]
         return torch.sum(torch.norm(foot_vel, dim=-1) * (torch.norm(self.simulator.contact_forces[:, self.feet_indices, :], dim=-1) > 1.), dim=1)
-    
-    
+
+
     def _reward_penalty_feet_height(self):
         # Penalize base height away from target
         feet_height = self.simulator._rigid_body_pos[:,self.feet_indices, 2]
         dif = torch.abs(feet_height - self.config.rewards.feet_height_target)
-        dif = torch.min(dif, dim=1).values # [num_env], # select the foot closer to target 
-        return torch.clip(dif - 0.02, min=0.) # target - 0.02 ~ target + 0.02 is acceptable 
-    
+        dif = torch.min(dif, dim=1).values # [num_env], # select the foot closer to target
+        return torch.clip(dif - 0.02, min=0.) # target - 0.02 ~ target + 0.02 is acceptable
+
     def _reward_penalty_feet_swing_height(self):
         contact = torch.norm(self.simulator.contact_forces[:, self.feet_indices, :3], dim=2) > 1.
         height_error = torch.square(self.simulator._rigid_body_pos[:, self.feet_indices, 2] - \
                                     self.config.rewards.feet_height_target) * ~contact
         return torch.sum(height_error, dim=(1))
-    
+
     def _reward_penalty_close_feet_xy(self):
         # returns 1 if two feet are too close
         left_foot_xy = self.simulator._rigid_body_pos[:, self.feet_indices[0], :2]
         right_foot_xy = self.simulator._rigid_body_pos[:, self.feet_indices[1], :2]
         feet_distance_xy = torch.norm(left_foot_xy - right_foot_xy, dim=1)
         return (feet_distance_xy < self.config.rewards.close_feet_threshold) * 1.0
-    
+
 
     def _reward_penalty_close_knees_xy(self):
         # returns 1 if two knees are too close
@@ -265,14 +265,14 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         right_knee_xy = self.simulator._rigid_body_pos[:, self.knee_indices[1], :2]
         self.knee_distance_xy = torch.norm(left_knee_xy - right_knee_xy, dim=1)
         return (self.knee_distance_xy < self.config.rewards.close_knees_threshold)* 1.0
-    
+
 
     def _reward_upperbody_joint_angle_freeze(self):
         # returns keep the upper body joint angles close to the default
         assert self.config.robot.has_upper_body_dof
         deviation = torch.abs(self.simulator.dof_pos[:, self.upper_dof_indices] - self.default_dof_pos[:,self.upper_dof_indices])
         return torch.sum(deviation, dim=1)
-    
+
     def _reward_penalty_hip_pos(self):
         # Penalize the hip joints (only roll and yaw)
         hips_roll_yaw_indices = self.hips_dof_id[1:3] + self.hips_dof_id[4:6]
@@ -306,7 +306,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         feet_xy_vel = torch.norm(
             self.simulator._rigid_body_vel[:, self.feet_indices, :2], dim=-1).sum(dim=1)
         return (feet_off_ground + feet_xy_vel) * zero_cmd
-    
+
     ########################### GAIT REWARDS ###########################
     def _calc_phase_time(self):
         # Calculate the phase time
@@ -319,9 +319,9 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         for i in range(2): # left and right feet
             is_stance = self.leg_phase[:, i] < 0.55
             contact = self.simulator.contact_forces[:, self.feet_indices[i], 2] > 1
-            res += ~(contact ^ is_stance)
+            res += ~(contact ^ is_stance) # XOR 연산 이후 not
         return res
-    
+
     def calculate_phase_expectation(self, phi, offset=0, phase="swing"):
         """
         Calculate the expectation value of I_i(φ).
@@ -352,7 +352,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         E_I_i = P_A_phi_B
 
         return E_I_i
-    
+
     def _reward_gait_period(self):
         """
         Jonah Siekmann, et al. "Sim-to-Real Learning of All Common Bipedal Gaits via Periodic Reward Composition"
@@ -385,7 +385,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
     ######################### Observations #########################
     def _get_obs_command_lin_vel(self):
         return self.commands[:, :2]
-    
+
     def _get_obs_command_ang_vel(self):
         return self.commands[:, 2:3]
 
@@ -398,9 +398,15 @@ class LeggedRobotLocomotion(LeggedRobotBase):
 
     def _get_obs_phase_time(self):
         return self.phase_time.unsqueeze(1)
-    
+
     def _get_obs_sin_phase(self):
         return torch.sin(2 * np.pi * self.phase_time).unsqueeze(1)
-    
+
     def _get_obs_cos_phase(self):
         return torch.cos(2 * np.pi * self.phase_time).unsqueeze(1)
+
+    def _get_obs_joint_acc(self):
+        pass
+
+    def _get_obs_base_acc(self):
+        pass

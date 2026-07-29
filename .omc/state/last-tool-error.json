@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"/home/kist/anaconda3/envs/hvgym/bin/python -c \\\"\\nimport hydra\\nfrom hydra import compose, initialize_config_dir\\nfrom humanoidverse.utils.helpers import pre_process_config\\nimport os\\ncfg...",
-  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"<string>\", line 17, in <module>\n  File \"/home/kist/work/workspace/ACM/ASAP/humanoidverse/utils/helpers.py\", line 36, in pre_process_config\n    _obs_key_list = config.env.config.obs.obs_dict\n  File \"/home/kist/anaconda3/envs/hvgym/lib/python3.8/site-packages/omegaconf/dictconfig.py\", line 359, in __getattr__\n    self._format_and_raise(key=key, value=None, cause=e)\n  File \"/home/kist/anaconda3/envs/hvgym/lib/python3.8/site-packages/omegaconf/b...",
-  "timestamp": "2026-07-24T05:49:06.750Z",
-  "retry_count": 3
+  "tool_input_preview": "{\"command\":\"MUJOCO_GL=egl /home/kist/anaconda3/envs/hvgym/bin/python - <<'EOF'\\nimport torch, yaml, sys\\nsys.path.insert(0, \\\"humanoidverse/utils\\\")\\nimport replay_compare as rc\\n\\ncfg = yaml.safe_loa...",
+  "error": "Exit code 2\nTraceback (most recent call last):\n  File \"<stdin>\", line 10, in <module>\n  File \"/home/kist/work/workspace/ACM/ASAP/humanoidverse/utils/replay_compare.py\", line 183, in render_side_by_side\n    imageio.mimsave(str(out_path), frames, fps=fps)\n  File \"/home/kist/anaconda3/envs/hvgym/lib/python3.8/site-packages/imageio/v2.py\", line 494, in mimwrite\n    with imopen(uri, \"wI\", **imopen_args) as file:\n  File \"/home/kist/anaconda3/envs/hvgym/lib/python3.8/site-packages/imageio/core/imopen.p...",
+  "timestamp": "2026-07-28T04:38:36.819Z",
+  "retry_count": 1
 }

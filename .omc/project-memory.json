@@ -239,6 +239,12 @@
       "type": "file"
     },
     {
+      "path": "humanoidverse/replay_agent.py",
+      "accessCount": 5,
+      "lastAccessed": 1785215359866,
+      "type": "file"
+    },
+    {
       "path": "humanoidverse/agents/ppo_hist/ppo_hist.py",
       "accessCount": 4,
       "lastAccessed": 1784872950605,
@@ -296,6 +302,12 @@
       "path": "humanoidverse/config/rewards/loco/reward_kapex_locomotion.yaml",
       "accessCount": 2,
       "lastAccessed": 1785199905204,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/utils/replay_compare.py",
+      "accessCount": 2,
+      "lastAccessed": 1785213531228,
       "type": "file"
     },
     {
@@ -452,6 +464,12 @@
       "path": ".superpowers/sdd/task-7-report.md",
       "accessCount": 1,
       "lastAccessed": 1784873060735,
+      "type": "file"
+    },
+    {
+      "path": "scripts/test/isaacsim_kapex_torque_acc.py",
+      "accessCount": 1,
+      "lastAccessed": 1785311133158,
       "type": "file"
     }
   ],
