@@ -251,6 +251,18 @@
       "type": "file"
     },
     {
+      "path": "humanoidverse/envs/locomotion/locomotion.py",
+      "accessCount": 4,
+      "lastAccessed": 1785398324518,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/envs/legged_base_task/legged_robot_base.py",
+      "accessCount": 4,
+      "lastAccessed": 1785398441735,
+      "type": "file"
+    },
+    {
       "path": "humanoidverse/config/exp/locomotion_history_encoder.yaml",
       "accessCount": 3,
       "lastAccessed": 1784872306991,
@@ -284,18 +296,6 @@
       "path": "humanoidverse/agents/ppo/ppo.py",
       "accessCount": 2,
       "lastAccessed": 1784872874623,
-      "type": "file"
-    },
-    {
-      "path": "humanoidverse/envs/legged_base_task/legged_robot_base.py",
-      "accessCount": 2,
-      "lastAccessed": 1784878454197,
-      "type": "file"
-    },
-    {
-      "path": "humanoidverse/envs/locomotion/locomotion.py",
-      "accessCount": 2,
-      "lastAccessed": 1785199901977,
       "type": "file"
     },
     {
@@ -470,6 +470,18 @@
       "path": "scripts/test/isaacsim_kapex_torque_acc.py",
       "accessCount": 1,
       "lastAccessed": 1785311133158,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/envs/locomotion/locomotion_cmd_curriculum.py",
+      "accessCount": 1,
+      "lastAccessed": 1785398064371,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/env/locomotion_cmd_curriculum.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1785398066318,
       "type": "file"
     }
   ],

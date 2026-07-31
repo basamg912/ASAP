@@ -1,0 +1,76 @@
+# @package _global_
+# humanoidverse/config/algo/ppo_hist_v3.yaml
+# History Encoder V3 = V2 + contrastive projection heads (h(z_s), g(z_t), InfoNCE).
+# ppo_hist_v2.yaml 의 additive 후속 — v2 config 는 수정하지 않는다.
+algo:
+  _target_: humanoidverse.agents.ppo_hist_v3.ppo_hist_v3.PPOHistV3
+  _recursive_: False
+  config:
+    num_learning_epochs: 5
+    num_mini_batches: 4
+    clip_param: 0.2
+    gamma: 0.99
+    lam: 0.95
+    value_loss_coef: 1.0
+    entropy_coef: 0.001
+    actor_learning_rate: 1.e-3
+    critic_learning_rate: 1.e-3
+    max_grad_norm: 1.0
+    use_clipped_value_loss: True
+    schedule: "adaptive"
+    desired_kl: 0.01
+    num_steps_per_env: 24
+    save_interval: 100
+    load_optimizer: True
+    init_noise_std: 0.5
+    num_learning_iterations: 1000000
+    init_at_random_ep_len: True
+    eval_callbacks: null
+
+    # ---- hist v2 상속 파라미터 ----
+    latent_dim: 16
+    vel_dim: 3
+    vel_coef: 1.0
+    latent_coef: 0.0              # v2 의 MSE latent match — V3 에선 contrastive 로 대체 (병행 실험 시 >0)
+    latent_coef_warmup_iters: 500 # contrastive/latent 공통 warmup (초기 teacher latent 노이즈 회피)
+    detach_encoder_for_policy: True
+    recon_coef: 1.0
+    vae_beta: 0.01
+    vae_free_bits: 0.1
+    encoder_obs_key: encoder_obs
+    recon_target_key: recon_target
+    encoder_config:
+      input_key: encoder_obs
+      hidden_dims: [256, 128]
+      activation: ELU
+    teacher_config:
+      enc_hidden_dims: [128, 64]
+      dec_hidden_dims: [128, 256]
+      activation: ELU
+      learning_rate: 1.e-3
+
+    # ---- v3 additions: contrastive heads ----
+    contrastive_coef: 0.5
+    contrastive_temperature: 0.1
+    contrastive_batch_size: 1024  # InfoNCE 서브샘플 (미니배치 24k 전체는 logits 메모리 불가)
+    projection_config:            # h(z_s), g(z_t) 공통 구조
+      proj_dim: 16
+      hidden_dims: [32]
+      activation: ELU
+
+    module_dict:
+      actor:
+        input_dim: [actor_obs, 19]   # actor_obs_dim + vel_dim(3) + latent_dim(16); 위 값들과 동기 유지
+        output_dim: [robot_action_dim]
+        layer_config:
+          type: MLP
+          hidden_dims: [512, 256, 128]
+          activation: ELU
+      critic:
+        type: MLP
+        input_dim: [critic_obs]
+        output_dim: [1]
+        layer_config:
+          type: MLP
+          hidden_dims: [512, 256, 128]
+          activation: ELU

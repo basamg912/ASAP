@@ -1,0 +1,11 @@
+# @package _global_
+# humanoidverse/config/exp/locomotion_hist_v2.yaml
+# exp/locomotion_history_encoder.yaml 의 additive 후속 — algo 만 v2 로 교체.
+# obs 는 CLI 로 선택 (+obs=loco/leggedloco_obs_history_encoder), env 는 필요 시
+# env=locomotion_cmd_curriculum 으로 교체 가능.
+defaults:
+  - /algo: ppo_hist_v2
+  - /env: locomotion
+
+experiment_name: hist_v2
+log_task_name: locomotion_hist_v2

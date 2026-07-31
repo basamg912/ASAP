@@ -1,0 +1,67 @@
+# @package _global_
+# humanoidverse/config/algo/ppo_hist_v2.yaml
+# History Encoder V2: student(v_base+z, MLP-mixer) / teacher(next-obs VAE) concurrent distillation.
+# ppo_history_encoder.yaml 의 additive 후속 — 기존 v1 config 는 수정하지 않는다.
+algo:
+  _target_: humanoidverse.agents.ppo_hist_v2.ppo_hist_v2.PPOHistV2
+  _recursive_: False
+  config:
+    num_learning_epochs: 5
+    num_mini_batches: 4
+    clip_param: 0.2
+    gamma: 0.99
+    lam: 0.95
+    value_loss_coef: 1.0
+    entropy_coef: 0.001
+    actor_learning_rate: 1.e-3
+    critic_learning_rate: 1.e-3
+    max_grad_norm: 1.0
+    use_clipped_value_loss: True
+    schedule: "adaptive"
+    desired_kl: 0.01
+    num_steps_per_env: 24
+    save_interval: 100
+    load_optimizer: True
+    init_noise_std: 0.5
+    num_learning_iterations: 1000000
+    init_at_random_ep_len: True
+    eval_callbacks: null
+
+    # ---- hist v2 additions ----
+    latent_dim: 16
+    vel_dim: 3                    # student 의 base velocity 추정 차원
+    vel_coef: 1.0                 # student: MSE(v_hat, GT base_lin_vel)
+    latent_coef: 0.5              # student: MSE(z_s, teacher_mu.detach())
+    latent_coef_warmup_iters: 500 # 초기 teacher latent 는 노이즈 -> 선형 warmup
+    detach_encoder_for_policy: True  # PPO gradient 를 student 로 흘리지 않음 (spec 3)
+    recon_coef: 1.0               # teacher: next-obs recon
+    vae_beta: 0.01                # teacher KL (v1 에서 1.0 은 posterior collapse 유발)
+    vae_free_bits: 0.1            # 차원당 KL floor (nats)
+    encoder_obs_key: encoder_obs
+    recon_target_key: recon_target
+    encoder_config:               # student (MLP-mixer)
+      input_key: encoder_obs
+      hidden_dims: [256, 128]
+      activation: ELU
+    teacher_config:
+      enc_hidden_dims: [128, 64]
+      dec_hidden_dims: [128, 256]
+      activation: ELU
+      learning_rate: 1.e-3
+
+    module_dict:
+      actor:
+        input_dim: [actor_obs, 19]   # actor_obs_dim + vel_dim(3) + latent_dim(16); 위 값들과 동기 유지
+        output_dim: [robot_action_dim]
+        layer_config:
+          type: MLP
+          hidden_dims: [512, 256, 128]
+          activation: ELU
+      critic:
+        type: MLP
+        input_dim: [critic_obs]
+        output_dim: [1]
+        layer_config:
+          type: MLP
+          hidden_dims: [512, 256, 128]
+          activation: ELU

@@ -240,10 +240,12 @@ class LeggedRobotLocomotion(LeggedRobotBase):
 
     def _reward_penalty_feet_height(self):
         # Penalize base height away from target
+        moving = (torch.norm(self.commands[:, :2], dim=1) >= 0.1) \
+        | (torch.abs(self.commands[:, 2]) >= 0.1)
         feet_height = self.simulator._rigid_body_pos[:,self.feet_indices, 2]
         dif = torch.abs(feet_height - self.config.rewards.feet_height_target)
         dif = torch.min(dif, dim=1).values # [num_env], # select the foot closer to target
-        return torch.clip(dif - 0.02, min=0.) # target - 0.02 ~ target + 0.02 is acceptable
+        return torch.clip(dif - 0.02, min=0.) * moving
 
     def _reward_penalty_feet_swing_height(self):
         contact = torch.norm(self.simulator.contact_forces[:, self.feet_indices, :3], dim=2) > 1.
@@ -315,12 +317,14 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         return phase_time
 
     def _reward_contact(self):
+        moving = (torch.norm(self.commands[:, :2], dim=1) >= 0.1) \
+            | (torch.abs(self.commands[:, 2]) >= 0.1)
         res = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
         for i in range(2): # left and right feet
             is_stance = self.leg_phase[:, i] < 0.55
             contact = self.simulator.contact_forces[:, self.feet_indices[i], 2] > 1
             res += ~(contact ^ is_stance) # XOR 연산 이후 not
-        return res
+        return res * moving
 
     def calculate_phase_expectation(self, phi, offset=0, phase="swing"):
         """

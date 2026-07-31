@@ -19,11 +19,11 @@ rewards:
   set_reward_date: 20260710
   only_positive_rewards: False
   reward_scales:
-      tracking_lin_vel: 3.0
-      tracking_ang_vel: 2.0
-      penalty_lin_vel_z: -1.0
-      penalty_ang_vel_xy: -0.1
-      penalty_orientation: 0 # og : -1.0
+      tracking_lin_vel: 1.0
+      tracking_ang_vel: 0.5
+      penalty_lin_vel_z: -2.0
+      penalty_ang_vel_xy: -0.5
+      penalty_orientation: -1.0
       penalty_torques: -0.00001
       penalty_dof_vel: -0.0001
       penalty_dof_acc: -3.5e-8
