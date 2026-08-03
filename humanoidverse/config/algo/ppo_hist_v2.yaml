@@ -41,7 +41,9 @@ algo:
     recon_target_key: recon_target
     encoder_config:               # student (MLP-mixer)
       input_key: encoder_obs
-      hidden_dims: [256, 128]
+      hidden_dims: [256, 128]     # feature mixing (per-step 75차원) hidden
+      channel_hidden_dims: [64]   # channel mixing (시계열 5차원) hidden — 미지정 시 hidden_dims 공유.
+                                  # 행 75회 반복되는 연산 병목이라 분리 축소 (인코더 MAC 2.9M→0.36M)
       activation: ELU
     teacher_config:
       enc_hidden_dims: [128, 64]

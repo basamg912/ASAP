@@ -24,13 +24,15 @@ class StudentEncoder(nn.Module):
     """[history] -> MLP-mixer -> [v_base(vel_dim), z(latent_dim)]. 결정론적."""
 
     def __init__(self, history_dim, latent_dim, vel_dim=3, hidden_dims=(256,),
-                 activation="ELU", key_dims=None, history_length=None):
+                 activation="ELU", key_dims=None, history_length=None,
+                 channel_hidden_dims=None):
         super().__init__()
         self.latent_dim = latent_dim
         self.vel_dim = vel_dim
         assert history_dim == sum(key_dims) * history_length
         self.net = MLP_mixer(sum(key_dims), history_length, vel_dim + latent_dim,
-                             list(hidden_dims), activation)
+                             list(hidden_dims), activation,
+                             channel_hidden_dims=channel_hidden_dims)
         self.key_dims = key_dims
         self.history_length = history_length
 
@@ -82,6 +84,7 @@ class PPOActorWithStudentEncoder(PPOActor):
             history_dim, latent_dim, vel_dim,
             tuple(encoder_config["hidden_dims"]), encoder_config["activation"],
             s["key_dims"], s["history_length"],
+            channel_hidden_dims=encoder_config.get("channel_hidden_dims", None),
         )
         self.detach_encoder_output = detach_encoder_output
         self._last_student = {}

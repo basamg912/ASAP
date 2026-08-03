@@ -23,7 +23,11 @@ class MLP(nn.Module):
         return self.net(x)
 
 class MLP_mixer(nn.Module):
-    def __init__(self, feature_dim, channel_dim, output_dim, hidden_dims, activation="ELU"):
+    def __init__(self, feature_dim, channel_dim, output_dim, hidden_dims, activation="ELU",
+                 channel_hidden_dims=None):
+        # channel_hidden_dims: channel mixing MLP 전용 hidden (미지정 시 hidden_dims 공유 — 하위호환).
+        # channel 차원(=history 길이, 보통 5)은 작아서 hidden 256 은 과설계 —
+        # 연산 병목(행 75회 반복)이므로 [64] 수준으로 분리 지정 권장.
         super().__init__()
         self.ln = nn.LayerNorm(feature_dim)
         self.ln2 = nn.LayerNorm(feature_dim)
@@ -38,12 +42,13 @@ class MLP_mixer(nn.Module):
         self.feature_mixing = nn.Sequential(*self.feature_layer)
 
         # Channel mixing
-        self.channel_layer = [nn.Linear(channel_dim, hidden_dims[0]), self.act]
-        for l in range(len(hidden_dims)):
-            if l == len(hidden_dims) - 1:
-                self.channel_layer.append(nn.Linear(hidden_dims[l], channel_dim))
+        ch_hidden = list(channel_hidden_dims) if channel_hidden_dims else list(hidden_dims)
+        self.channel_layer = [nn.Linear(channel_dim, ch_hidden[0]), self.act]
+        for l in range(len(ch_hidden)):
+            if l == len(ch_hidden) - 1:
+                self.channel_layer.append(nn.Linear(ch_hidden[l], channel_dim))
             else:
-                self.channel_layer += [nn.Linear(hidden_dims[l], hidden_dims[l + 1]), self.act]
+                self.channel_layer += [nn.Linear(ch_hidden[l], ch_hidden[l + 1]), self.act]
         self.channel_mixing = nn.Sequential(*self.channel_layer)
 
         # Output
@@ -59,16 +64,16 @@ class MLP_mixer(nn.Module):
         x = x.flatten(1)
         return self.output_layer(x)
 
-# TODO : MLP-mixer 버전으로 수정
 # (1) MLP 모듈 내부 init/forward 수정
 # (2) forward 부분 이해
 class HistoryEncoderMixer(nn.Module):
     def __init__(self, history_dim, latent_dim, hidden_dims=(256,), activation="ELU",
-        key_dims=None, num_keys=None, history_length=None):
+        key_dims=None, num_keys=None, history_length=None, channel_hidden_dims=None):
         super().__init__()
         self.latent_dim = latent_dim
         assert history_dim == sum(key_dims) * history_length
-        self.net = MLP_mixer(sum(key_dims), history_length, 2 * latent_dim, list(hidden_dims), activation)
+        self.net = MLP_mixer(sum(key_dims), history_length, 2 * latent_dim, list(hidden_dims), activation,
+                             channel_hidden_dims=channel_hidden_dims)
         self.key_dims = key_dims
         self.num_keys = num_keys
         self.history_length = history_length
@@ -155,7 +160,8 @@ class PPOActorWithHistoryEncoder(PPOActor):
         self.history_encoder = HistoryEncoderMixer( # config 에 정의한 [history] 통해 접근
             history_dim, latent_dim,
             tuple(encoder_config["hidden_dims"]), encoder_config["activation"],
-            self.key_dims, self.num_keys, self.history_length
+            self.key_dims, self.num_keys, self.history_length,
+            channel_hidden_dims=encoder_config.get("channel_hidden_dims", None),
         )
         self.state_predictor = StatePredictor(
             latent_dim, recon_dim,

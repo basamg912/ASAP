@@ -36,7 +36,9 @@ algo:
     recon_target_key: recon_target
     encoder_config:
       input_key: encoder_obs
-      hidden_dims: [256, 128]
+      hidden_dims: [256, 128]     # feature mixing hidden
+      channel_hidden_dims: [64]   # channel mixing 전용 hidden — 미지정 시 hidden_dims 공유(구버전 동작).
+                                  # ablation 공정성 위해 v2/v3 과 동일 값 유지
       activation: ELU
     decoder_config:
       target_key: recon_target

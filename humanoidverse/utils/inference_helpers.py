@@ -16,6 +16,30 @@ def export_policy_as_onnx(inference_model, path, exported_policy_name, example_o
 
         actor = copy.deepcopy(inference_model['actor']).to('cpu')
 
+        if hasattr(actor, "student"):
+            # ppo_hist_v2/v3 의 PPOActorWithStudentEncoder:
+            # act_inference(actor_obs, encoder_obs) 2-입력이라 별도 wrapper 로 export
+            class PPOStudentEncoderWrapper(nn.Module):
+                def __init__(self, actor):
+                    super().__init__()
+                    self.actor = actor
+
+                def forward(self, actor_obs, encoder_obs):
+                    return self.actor.act_inference(actor_obs, encoder_obs)
+
+            wrapper = PPOStudentEncoderWrapper(actor)
+            example_input_list = (example_obs_dict["actor_obs"], example_obs_dict["encoder_obs"])
+            torch.onnx.export(
+                wrapper,
+                example_input_list,
+                path,
+                verbose=True,
+                input_names=["actor_obs", "encoder_obs"],
+                output_names=["action"],
+                opset_version=13
+            )
+            return
+
         class PPOWrapper(nn.Module):
             def __init__(self, actor):
                 """
