@@ -26,7 +26,7 @@ rewards:
       # limits_torque: -0.1
       feet_air_time: 1.0
       base_height: -5.0
-      penalty_feet_height: -10
+      # penalty_feet_height: -10
       termination: -100.0
       alive: 0.1
       # penalty_in_the_air: -100.0
@@ -39,6 +39,7 @@ rewards:
       contact: 0.5
       penalty_waist_pos: -0.5
       penalty_torso_ori: -0.5
+      penalty_feet_swing_height: -5.0
 
   reward_tracking_sigma:
     lin_vel: 0.25
@@ -107,10 +108,11 @@ rewards:
     # "termination",
     # "feet_air_time",
     "feet_max_height_for_this_air",
-    "penalty_feet_height",
+    # "penalty_feet_height",
     "upperbody_joint_angle_freeze",
     "penalty_close_feet_xy",
     "penalty_ang_vel_xy_torso",
     "penalty_torso_ori",
     "penalty_waist_pos",
-    "penalty_hip_pos"]
+    "penalty_hip_pos",
+    "penalty_feet_swing_height"]
