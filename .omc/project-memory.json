@@ -197,6 +197,12 @@
   },
   "hotPaths": [
     {
+      "path": "humanoidverse/envs/locomotion/locomotion.py",
+      "accessCount": 15,
+      "lastAccessed": 1786351223968,
+      "type": "file"
+    },
+    {
       "path": "docs/superpowers/plans/2026-07-24-history-encoder-vae.md",
       "accessCount": 10,
       "lastAccessed": 1784878587565,
@@ -227,6 +233,12 @@
       "type": "file"
     },
     {
+      "path": "humanoidverse/envs/legged_base_task/legged_robot_base.py",
+      "accessCount": 6,
+      "lastAccessed": 1786351070677,
+      "type": "file"
+    },
+    {
       "path": "docs/superpowers/specs/2026-07-24-history-encoder-vae-design.md",
       "accessCount": 5,
       "lastAccessed": 1784870423861,
@@ -245,21 +257,9 @@
       "type": "file"
     },
     {
-      "path": "humanoidverse/envs/locomotion/locomotion.py",
-      "accessCount": 5,
-      "lastAccessed": 1786327029797,
-      "type": "file"
-    },
-    {
       "path": "humanoidverse/agents/ppo_hist/ppo_hist.py",
       "accessCount": 4,
       "lastAccessed": 1784872950605,
-      "type": "file"
-    },
-    {
-      "path": "humanoidverse/envs/legged_base_task/legged_robot_base.py",
-      "accessCount": 4,
-      "lastAccessed": 1785398441735,
       "type": "file"
     },
     {
