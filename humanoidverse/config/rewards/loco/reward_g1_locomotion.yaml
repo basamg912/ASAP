@@ -92,7 +92,7 @@ rewards:
   reward_penalty_reward_names : [
     "penalty_lin_vel_z",
     "penalty_ang_vel_xy",
-    "penalty_orientation",
+    # "penalty_orientation",
     "penalty_torques",
     "penalty_dof_acc",
     "penalty_dof_vel",
@@ -112,7 +112,7 @@ rewards:
     "upperbody_joint_angle_freeze",
     "penalty_close_feet_xy",
     "penalty_ang_vel_xy_torso",
-    "penalty_torso_ori",
-    "penalty_waist_pos",
-    "penalty_hip_pos",
+    # "penalty_torso_ori",
+    # "penalty_waist_pos",
+    # "penalty_hip_pos",
     "penalty_feet_swing_height"]
