@@ -245,15 +245,15 @@
       "type": "file"
     },
     {
-      "path": "humanoidverse/agents/ppo_hist/ppo_hist.py",
-      "accessCount": 4,
-      "lastAccessed": 1784872950605,
+      "path": "humanoidverse/envs/locomotion/locomotion.py",
+      "accessCount": 5,
+      "lastAccessed": 1786327029797,
       "type": "file"
     },
     {
-      "path": "humanoidverse/envs/locomotion/locomotion.py",
+      "path": "humanoidverse/agents/ppo_hist/ppo_hist.py",
       "accessCount": 4,
-      "lastAccessed": 1785398324518,
+      "lastAccessed": 1784872950605,
       "type": "file"
     },
     {
@@ -482,6 +482,18 @@
       "path": "humanoidverse/config/env/locomotion_cmd_curriculum.yaml",
       "accessCount": 1,
       "lastAccessed": 1785398066318,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/rewards/loco/reward_g1_locomotion.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1786327031943,
+      "type": "file"
+    },
+    {
+      "path": "humanoidverse/config/rewards/loco/reward_kapex_2_locomotion.yaml",
+      "accessCount": 1,
+      "lastAccessed": 1786327033376,
       "type": "file"
     }
   ],

@@ -35,7 +35,7 @@ rewards:
       penalty_hip_pos: -1.0
       feet_heading_alignment: -0.3
       penalty_close_feet_xy: -0.05
-      penalty_ang_vel_xy_torso: -1.0
+      # penalty_ang_vel_xy_torso: -1.0 # kapex 기준 축 수정 필요
       contact: 0.5
       penalty_waist_pos: -0.5
       penalty_torso_ori: -0.5
@@ -89,6 +89,7 @@ rewards:
   reward_penalty_degree: 0.00003
   num_compute_average_epl: 10000
 
+  torso_upright_local_gravity: [0.0, 1.0, 0.0]
   reward_penalty_reward_names : [
     "penalty_lin_vel_z",
     "penalty_ang_vel_xy",
@@ -99,7 +100,7 @@ rewards:
     "penalty_action_rate",
     "penalty_feet_contact_forces",
     "penalty_stumble",
-    "penalty_slippage",
+    # "penalty_slippage",  # 끌기(shuffle)의 직접 비용 — 초반부터 full 강도여야 해서 커리큘럼 제외
     "penalty_feet_ori",
     "penalty_in_the_air",
     "limits_dof_pos",
@@ -117,3 +118,10 @@ rewards:
     "penalty_hip_pos",
     "penalty_feet_swing_height"
     ]
+
+env:
+    config:
+        termination_scales:
+            termination_min_base_height: 0.4
+        termination:
+            terminate_by_low_height: True

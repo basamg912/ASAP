@@ -249,10 +249,17 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         return torch.clip(dif - 0.02, min=0.) * moving
 
     def _reward_penalty_feet_swing_height(self):
-        contact = torch.norm(self.simulator.contact_forces[:, self.feet_indices, :3], dim=2) > 1.
-        height_error = torch.square(self.simulator._rigid_body_pos[:, self.feet_indices, 2] - \
-                                    self.config.rewards.feet_height_target) * ~contact
-        return torch.sum(height_error, dim=(1))
+        # 스윙 발의 높이 오차 벌점. 게이트를 실제 접촉(~contact)이 아니라 gait 클록의
+        # swing 위상으로 잡는다.
+        # 접촉 게이트는 "발을 아예 안 떼면 평가 대상에서 빠지는" 구조라 질질 끄는 보행이
+        # 벌점 0 이 되고, 반대로 살짝 뗀 발(제곱오차 최대 지점)만 처벌받아 들기 학습을
+        # 막았다. 위상 게이트는 접촉 여부로 도망갈 수 없어 끌기를 직접 벌한다.
+        moving = (torch.norm(self.commands[:, :2], dim=1) >= 0.1) \
+            | (torch.abs(self.commands[:, 2]) >= 0.1)
+        is_swing = self.leg_phase >= 0.55  # _reward_contact 의 is_stance 와 동일 기준
+        feet_height = self.simulator._rigid_body_pos[:, self.feet_indices, 2]
+        height_error = torch.square(feet_height - self.config.rewards.feet_height_target)
+        return torch.sum(height_error * is_swing, dim=1) * moving
 
     def _reward_penalty_close_feet_xy(self):
         # returns 1 if two feet are too close

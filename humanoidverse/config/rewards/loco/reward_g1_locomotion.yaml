@@ -99,7 +99,7 @@ rewards:
     "penalty_action_rate",
     "penalty_feet_contact_forces",
     "penalty_stumble",
-    "penalty_slippage",
+    # "penalty_slippage",  # 끌기(shuffle)의 직접 비용 — 초반부터 full 강도여야 해서 커리큘럼 제외
     "penalty_feet_ori",
     "penalty_in_the_air",
     "limits_dof_pos",
