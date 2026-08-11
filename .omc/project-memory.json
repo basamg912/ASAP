@@ -10,7 +10,7 @@
   },
   "build": {
     "buildCommand": null,
-    "testCommand": "cd /home/kist/work/workspace/ACM/ASAP\ncat >> tests/agents/test_ppo_hist_modules.py << 'EOF'\n\n\ndef test_vae_kl_free_bits_floor_and_grad_block():\n    from humanoidverse.agents.modules.ppo_hist_modules import vae_kl_loss\n    mu = torch.zeros(4, 16)\n    logvar = torch.zeros(4, 16)              # true KL = 0 (posterior == prior)\n    out = vae_kl_loss(mu, logvar, free_bits=0.1)\n    assert torch.allclose(out, torch.tensor(16 * 0.1))   # floor: dim 당 0.1 로 클램프\n    # floor 이하 차원은 KL 그래디언트가 차단되어야 함\n    mu = torch.zeros(4, 16, requires_grad=True)\n    vae_kl_loss(mu, torch.zeros(4, 16), free_bits=0.1).backward()\n    assert torch.all(mu.grad == 0)\n    # free_bits=0 (기본) 은 기존 동작과 동일해야 함\n    m, lv = torch.randn(8, 16), torch.randn(8, 16)\n    legacy = -0.5 * torch.mean(torch.sum(1 + lv - m.pow(2) - lv.exp(), dim=-1))\n    assert torch.allclose(vae_kl_loss(m, lv), legacy, atol=1e-6)\nEOF\necho \"=== 전체 테스트 ===\"\nPYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/kist/anaconda3/envs/hvgym/bin/python -m pytest tests/agents/test_ppo_hist_modules.py -q 2>&1 | tail -3\necho \"=== hydra 병합 확인 ===\"\nPYTHONPATH=. /home/kist/anaconda3/envs/hvgym/bin/python -c \"\nfrom hydra import compose, initialize_config_dir\nimport os\nwith initialize_config_dir(config_dir=os.path.abspath('humanoidverse/config'), version_base=None):\n    cfg = compose(config_name='base', overrides=['+simulator=isaacsim','+exp=locomotion_history_encoder','+domain_rand=domain_rand_base','+rewards=loco/reward_kapex_locomotion','+robot=kapex/kapex_31dof','+terrain=terrain_locomotion_plane','+obs=loco/leggedloco_obs_history_encoder'])\n    print('vae_beta:', cfg.algo.config.vae_beta, '| vae_free_bits:', cfg.algo.config.vae_free_bits)\n\" 2>&1 | tail -1",
+    "testCommand": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=/home/kist/work/workspace/ACM/ASAP conda run -n hvgym python -m pytest tests/agents/ -q 2>&1 | tail -3; git -C /home/kist/work/workspace/ACM/ASAP status --short | grep -v \"^ M .omc\"",
     "lintCommand": null,
     "devCommand": null,
     "scripts": {}
@@ -209,15 +209,15 @@
       "type": "file"
     },
     {
-      "path": "humanoidverse/agents/modules/ppo_hist_modules.py",
-      "accessCount": 9,
-      "lastAccessed": 1784872866343,
+      "path": "tests/agents/test_ppo_hist_modules.py",
+      "accessCount": 10,
+      "lastAccessed": 1786433426342,
       "type": "file"
     },
     {
-      "path": "tests/agents/test_ppo_hist_modules.py",
+      "path": "humanoidverse/agents/modules/ppo_hist_modules.py",
       "accessCount": 9,
-      "lastAccessed": 1784872935250,
+      "lastAccessed": 1784872866343,
       "type": "file"
     },
     {
@@ -239,15 +239,15 @@
       "type": "file"
     },
     {
-      "path": "docs/superpowers/specs/2026-07-24-history-encoder-vae-design.md",
-      "accessCount": 5,
-      "lastAccessed": 1784870423861,
+      "path": "humanoidverse/config/obs/loco/leggedloco_obs_history_encoder.yaml",
+      "accessCount": 6,
+      "lastAccessed": 1786436647351,
       "type": "file"
     },
     {
-      "path": "humanoidverse/config/obs/loco/leggedloco_obs_history_encoder.yaml",
+      "path": "docs/superpowers/specs/2026-07-24-history-encoder-vae-design.md",
       "accessCount": 5,
-      "lastAccessed": 1784878511504,
+      "lastAccessed": 1784870423861,
       "type": "file"
     },
     {
@@ -269,6 +269,12 @@
       "type": "file"
     },
     {
+      "path": "humanoidverse/utils/helpers.py",
+      "accessCount": 3,
+      "lastAccessed": 1786436493833,
+      "type": "file"
+    },
+    {
       "path": "humanoidverse/agents/modules/ppo_modules.py",
       "accessCount": 2,
       "lastAccessed": 1784871823722,
@@ -278,12 +284,6 @@
       "path": "humanoidverse/config/obs/loco/leggedloco_obs_history_wolinvel.yaml",
       "accessCount": 2,
       "lastAccessed": 1784872152457,
-      "type": "file"
-    },
-    {
-      "path": "humanoidverse/utils/helpers.py",
-      "accessCount": 2,
-      "lastAccessed": 1784872165357,
       "type": "file"
     },
     {

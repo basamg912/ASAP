@@ -1,0 +1,11 @@
+# @package _global_
+# humanoidverse/config/exp/locomotion_hist_v4.yaml
+# exp/locomotion_hist_v3.yaml 의 additive 후속 — algo 만 v4 로 교체.
+# obs 는 CLI 로 선택하되 teacher_obs 그룹이 있는 v4 전용 파일이어야 한다:
+#   +obs=loco/leggedloco_obs_history_encoder_v4
+defaults:
+  - /algo: ppo_hist_v4
+  - /env: locomotion
+
+experiment_name: hist_v4
+log_task_name: locomotion_hist_v4

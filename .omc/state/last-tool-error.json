@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"/home/kist/anaconda3/envs/hvgym/bin/python - <<'EOF'\\nimport numpy as np\\nfrom sklearn.linear_model import Ridge\\nfrom sklearn.preprocessing import StandardScaler\\nd = np.load(\\\"ckpt/hist_...",
-  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\n  File \"/home/kist/anaconda3/envs/hvgym/lib/python3.8/site-packages/numpy/lib/npyio.py\", line 405, in load\n    fid = stack.enter_context(open(os_fspath(file), \"rb\"))\nFileNotFoundError: [Errno 2] No such file or directory: 'ckpt/hist_ablation/rew1/v3/latents/latents_ckpt_61000.npz'",
-  "timestamp": "2026-08-10T07:22:30.671Z",
-  "retry_count": 3
+  "tool_input_preview": "{\"command\":\"/home/kist/anaconda3/envs/hvgym/bin/python - <<'EOF'\\nfrom tensorboard.backend.event_processing.event_accumulator import EventAccumulator\\nd=\\\"logs/G1_cmd_cur/20260810_174243-g1_reward_set...",
+  "error": "Exit code 1\n   iter     EMA   pscale     epl  noise_std  contact  track_lin  act_rate\nTraceback (most recent call last):\n  File \"<stdin>\", line 15, in <module>\nValueError: too many values to unpack (expected 7)",
+  "timestamp": "2026-08-11T01:02:18.234Z",
+  "retry_count": 1
 }

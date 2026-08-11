@@ -325,23 +325,14 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         return phase_time
 
     def _reward_contact(self):
-        # 클록 위상 매칭 보상. 덧셈 항(res)만 쓰면 공중/지면에 '고정된' 발도 자기 위상
-        # 구간(45~55%)에서 부분점수를 받아 한 발 파킹(깽깽이)·양발 끌기가 살아남는다.
-        # 두 발이 '동시에' 맞을 때만 지급되는 곱 보너스를 더해 그 부분점수를 상쇄한다.
-        #   최대 4.0 — 정상 교대 ~3.66 / 깽깽이 ~2.35 / 끌기 ~1.30
-        # (덧셈 항을 남겨야 한 발만 맞춰도 gradient 가 생겨 초기 학습이 가능하다)
         moving = (torch.norm(self.commands[:, :2], dim=1) >= 0.1) \
             | (torch.abs(self.commands[:, 2]) >= 0.1)
         res = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
-        both = torch.ones(self.num_envs, dtype=torch.float, device=self.device)
         for i in range(2): # left and right feet
             is_stance = self.leg_phase[:, i] < 0.55
             contact = self.simulator.contact_forces[:, self.feet_indices[i], 2] > 1
-            match = (~(contact ^ is_stance)).float() # XOR 연산 이후 not
-            res += match
-            both = both * match
-        pair_bonus = float(self.config.rewards.get("contact_pair_bonus", 2.0))
-        return (res + pair_bonus * both) * moving
+            res += ~(contact ^ is_stance) # XOR 연산 이후 not
+        return res * moving
 
     def calculate_phase_expectation(self, phi, offset=0, phase="swing"):
         """

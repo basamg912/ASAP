@@ -1,0 +1,92 @@
+# @package _global_
+# humanoidverse/config/algo/ppo_hist_v4.yaml
+# History Encoder V4 = V2 구조 - teacher VAE(recon/KL).
+#   teacher phi: [teacher_obs] -> MLP -> z (latent encoding only)
+#   critic     : cat[critic_obs, phi(teacher_obs_t)] -> value  (value loss 로 phi 학습)
+#   student    : MSE(z_s, phi(teacher_obs_{t+1}).detach()) + MSE(v_hat, GT v)
+#   teacher 학습 신호는 teacher_mode 로 선택 (critic / critic_aux / frozen / vicreg)
+#
+# obs 는 반드시 teacher_obs 그룹이 있는 파일로 실행:
+#   +obs=loco/leggedloco_obs_history_encoder_v4
+# v1/v2/v3 config 는 수정하지 않는다 (additive). recon_coef/vae_beta/vae_free_bits 는
+# v4 에 존재하지 않으며 agent 가 상속 호환용 0.0 을 주입한다.
+algo:
+  _target_: humanoidverse.agents.ppo_hist_v4.ppo_hist_v4.PPOHistV4
+  _recursive_: False
+  config:
+    num_learning_epochs: 5
+    num_mini_batches: 4
+    clip_param: 0.2
+    gamma: 0.99
+    lam: 0.95
+    value_loss_coef: 1.0
+    entropy_coef: 0.01
+    actor_learning_rate: 1.e-3
+    critic_learning_rate: 1.e-3
+    max_grad_norm: 1.0
+    use_clipped_value_loss: True
+    schedule: "adaptive"
+    desired_kl: 0.01
+    num_steps_per_env: 24
+    save_interval: 100
+    load_optimizer: True
+    init_noise_std: 0.8
+    num_learning_iterations: 1000000
+    init_at_random_ep_len: True
+    eval_callbacks: null
+
+    # ---- hist v2 상속 파라미터 (ablation 공정성 위해 v2/v3 과 동일 값 유지) ----
+    latent_dim: 16
+    vel_dim: 3
+    vel_coef: 1.0
+    latent_coef: 0.5              # student: MSE(z_s, z_t.detach())
+    latent_coef_warmup_iters: 500 # critic/vicreg 모드는 초기 z_t 가 노이즈 -> 선형 warmup (v2/v3 과 동일).
+                                  # teacher_mode=frozen 은 타깃이 처음부터 stationary 이므로 0 으로
+    detach_encoder_for_policy: True
+    encoder_obs_key: encoder_obs
+    teacher_obs_key: teacher_obs    # phi 입력 그룹 (privileged + o_t proprio)
+    recon_target_key: teacher_obs   # v2 rollout 이 "이 그룹의 t+1 값"을 next_obs_target 으로
+                                    # 캡처한다 -> student 타깃 phi(teacher_obs_{t+1}) 용.
+                                    # v4 에 recon 은 없고 이름만 v2 상속 (두 키는 같아야 함)
+    encoder_config:               # student (MLP-mixer)
+      input_key: encoder_obs
+      hidden_dims: [256, 128]     # feature mixing (per-step 75차원) hidden
+      channel_hidden_dims: [64]   # channel mixing (시계열 5차원) hidden
+      activation: ELU
+
+    # ---- v4 additions: deterministic teacher encoder ----
+    teacher_mode: critic          # critic:     phi(teacher_obs_t) 를 main critic 입력에 concat,
+                                  #             critic value loss gradient 로 phi 학습.
+                                  #             입력이 t 시점이라 baseline 무편향
+                                  # critic_aux: 학습 전용 aux head V_aux(critic_obs, phi(o_{t+1}))
+                                  #             로 returns 회귀. main critic/GAE 무수정
+                                  # frozen:     teacher 미학습 (고정 랜덤 사영 = stationary target)
+                                  # vicreg:     align(z, z_s.detach()) + var/cov 정규화
+    teacher_config:
+      enc_hidden_dims: [128, 64]  # v2 teacher encoder 와 동일 (decoder 는 없음)
+      activation: ELU
+      output_norm: True           # z 에 affine 없는 LayerNorm — critic 입력/타깃 스케일 고정
+      learning_rate: 1.e-3        # frozen 외 모든 모드에서 사용 (teacher + aux head 공용)
+      value_hidden_dims: [256, 128]  # critic_aux 전용: aux value head
+      value_coef: 1.0             # critic_aux 전용: MSE(V_aux, returns) 가중치
+      align_coef: 1.0             # vicreg 전용: MSE(z, z_s.detach())
+      var_coef: 1.0               # vicreg 전용: 차원별 std hinge (붕괴 방지 핵심 항)
+      cov_coef: 0.04              # vicreg 전용: off-diagonal 공분산 억제
+
+    module_dict:
+      actor:
+        input_dim: [actor_obs, 19]   # actor_obs_dim + vel_dim(3) + latent_dim(16); 위 값들과 동기 유지
+        output_dim: [robot_action_dim]
+        layer_config:
+          type: MLP
+          hidden_dims: [512, 256, 128]
+          activation: ELU
+      critic:
+        type: MLP
+        input_dim: [critic_obs]      # teacher_mode=critic 이면 agent 가 latent_dim 을 자동 append
+                                     # (yaml 에 숫자 중복 -> latent_dim 불일치 footgun 방지)
+        output_dim: [1]
+        layer_config:
+          type: MLP
+          hidden_dims: [512, 256, 128]
+          activation: ELU
