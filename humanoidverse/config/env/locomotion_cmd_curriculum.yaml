@@ -18,7 +18,7 @@ env:
       # tracking 게이트: walk 커맨드 env 의 tracking_lin_vel 원값(exp, [0,1]) EMA 가
       # 이 값을 넘어야만 level-up. 서있기(생존)만으로 range 가 확장되는 것을 차단.
       # 서있는 정책의 EMA 는 range 가 커질수록 하락 → progress ~0.3 부근에서 자연 정지.
-      tracking_level_up_threshold: 0.75
+      tracking_level_up_threshold: 0.8
       tracking_ema_alpha: 0.001  # step 당 EMA 계수 (시정수 ~1000 step ≈ 40 iter)
       initial_progress: 0.0      # resume 시 진행도를 이어서 시작할 때 지정
       initial_ranges:            # progress=0 범위; 최종 범위는 locomotion_command_ranges
