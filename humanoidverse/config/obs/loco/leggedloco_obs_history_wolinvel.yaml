@@ -57,9 +57,26 @@ obs:
   noise_initial_value: 0.05
   noise_value_max: 1.00
   noise_value_min: 0.00001
-  soft_dof_pos_curriculum_degree: 0.00001
-  soft_dof_pos_curriculum_level_down_threshold: 100
-  soft_dof_pos_curriculum_level_up_threshold: 900
+  # (구 키 soft_dof_pos_curriculum_* 에서 이름 정리. 구 키도 폴백으로 계속 동작한다)
+  noise_curriculum_degree: 0.00001
+  noise_curriculum_level_down_threshold: 100
+  noise_curriculum_level_up_threshold: 900
+
+  # 노이즈는 obs_scales 를 곱하기 전 '물리 단위' 로 준다
+  # (IsaacLab ObservationManager 순서: func → noise → scale).
+  #
+  # 값 형식 — IsaacLab isaaclab.utils.noise 의 NoiseCfg 3종을 대응한다:
+  #   0.05                      → UniformNoiseCfg(n_min=-0.05, n_max=0.05)  [스칼라 축약]
+  #   {n_min: -0.1, n_max: 0.1} → UniformNoiseCfg  (비대칭 가능 = 센서 바이어스)
+  #   {mean: 0.0, std: 0.05}    → GaussianNoiseCfg
+  #   {bias: 0.02}              → ConstantNoiseCfg
+  #   각 dict 에 operation: add(기본)|scale|abs 지정 가능
+  #
+  # IsaacLab velocity_env_cfg.py PolicyCfg 참고값 (활성화 시 출발점):
+  #   base_lin_vel Unoise(±0.1) / base_ang_vel Unoise(±0.2)
+  #   projected_gravity Unoise(±0.05) / joint_pos Unoise(±0.01) / joint_vel Unoise(±1.5)
+  # command_* 와 actions 는 IsaacLab 에서 노이즈를 주지 않는다 — 센서값이 아니라
+  # 내부에서 알고 있는 값이라 노이즈가 물리적 의미가 없다. 0.0 으로 유지할 것.
   noise_scales: {
     base_lin_vel: 0.0,
     base_ang_vel: 0.0,

@@ -16,8 +16,8 @@ env:
       humanoid_commands_scale: 1.0
     # 일반 loco
     locomotion_command_ranges:
-      lin_vel_x: [-0.5, 1.0]
-      lin_vel_y: [-0.5, 0.5]
+      lin_vel_x: [-1.0, 1.0]
+      lin_vel_y: [-0.4, 0.4]
       ang_vel_yaw: [-1.0, 1.0]
       heading: [-3.14, 3.14]
     # 리워드 설정
@@ -28,7 +28,10 @@ env:
     #   heading: [-3.14, 3.14]
 
     locomotion_command_resampling_time: 10.0
-    # command 리샘플 시 이 확률로 정지(standstill) 커맨드 배정 — walk/stand 둘 다 학습
+    # command 리샘플 시 이 확률로 정지(standstill) 커맨드 배정 — walk/stand 둘 다 학습.
+    # IsaacLab UniformVelocityCommandCfg.rel_standing_envs 와 동일한 역할이며,
+    # 정지 env 의 유일한 공급원이다 (legged_gym 의 "norm 작으면 0" 로직은 제거됨).
+    # 참고 IsaacLab 값: velocity_env_cfg 기본 0.02, Digit/Spot 0.1, loco-manip 0.25
     locomotion_stand_still_prob: 0.1
 
     termination:

@@ -74,31 +74,75 @@ def pre_process_config(config) -> None:
     logger.debug(f"{config.algo.config.module_dict}")
     # logger.debug(f"{config.algo.config.network_dict}")
 
-def parse_observation(cls: Any, 
-                      key_list: List, 
-                      buf_dict: Dict, 
-                      obs_scales: Dict, 
+def apply_obs_noise(data: torch.Tensor, noise_cfg: Any, curriculum_scale: float = 1.0) -> torch.Tensor:
+    """IsaacLab isaaclab.utils.noise 의 NoiseCfg 3종을 대응한다.
+
+    지원 형식 (noise_scales 의 값):
+      - scalar x        → UniformNoiseCfg(n_min=-x, n_max=+x)  [기존 config 호환]
+      - {n_min, n_max}  → UniformNoiseCfg   (비대칭 가능 — 센서 바이어스 모사)
+      - {mean, std}     → GaussianNoiseCfg
+      - {bias}          → ConstantNoiseCfg
+      - operation: add(기본) | scale | abs — IsaacLab NoiseCfg.operation 과 동일
+
+    curriculum_scale 은 노이즈 크기에만 곱한다(데이터에는 곱하지 않는다).
+    """
+    if noise_cfg is None:
+        return data
+
+    # scalar 형식: 기존 config 와의 하위 호환 (대칭 uniform)
+    if isinstance(noise_cfg, (int, float)):
+        n = float(noise_cfg) * curriculum_scale
+        if n == 0.0:
+            return data
+        return data + (torch.rand_like(data) * 2.0 - 1.0) * n
+
+    get = noise_cfg.get
+    operation = get("operation", "add")
+
+    if "n_min" in noise_cfg or "n_max" in noise_cfg:
+        n_min = float(get("n_min", -1.0)) * curriculum_scale
+        n_max = float(get("n_max", 1.0)) * curriculum_scale
+        noise = torch.rand_like(data) * (n_max - n_min) + n_min
+    elif "std" in noise_cfg or "mean" in noise_cfg:
+        mean = float(get("mean", 0.0)) * curriculum_scale
+        std = float(get("std", 1.0)) * curriculum_scale
+        noise = mean + std * torch.randn_like(data)
+    elif "bias" in noise_cfg:
+        noise = torch.zeros_like(data) + float(get("bias", 0.0)) * curriculum_scale
+    else:
+        raise ValueError(f"Unknown obs noise cfg: {noise_cfg}")
+
+    if operation == "add":
+        return data + noise
+    elif operation == "scale":
+        return data * noise
+    elif operation == "abs":
+        return noise
+    raise ValueError(f"Unknown operation in noise: {operation}")
+
+
+def parse_observation(cls: Any,
+                      key_list: List,
+                      buf_dict: Dict,
+                      obs_scales: Dict,
                       noise_scales: Dict,
                       current_noise_curriculum_value: Any) -> None:
     """ Parse observations for the legged_robot_base class
+
+    적용 순서는 IsaacLab ObservationManager 와 동일하다: func → noise → scale
+    (observation_manager.py:395-407). 노이즈는 스케일 이전의 물리 단위로 준다.
     """
 
     for obs_key in key_list:
         if obs_key.endswith("_raw"):
             obs_key = obs_key[:-4]
-            obs_noise = 0.
+            noise_cfg = None
         else:
-            obs_noise = noise_scales[obs_key] * current_noise_curriculum_value
-        
-        # print(f"obs_key: {obs_key}, obs_noise: {obs_noise}")
-        
+            noise_cfg = noise_scales[obs_key]
+
         actor_obs = getattr(cls, f"_get_obs_{obs_key}")().clone()
-        obs_scale = obs_scales[obs_key]
-        # Yuanhang: use rand_like (uniform 0-1) instead of randn_like (N~[0,1])
-        # buf_dict[obs_key] = actor_obs * obs_scale + (torch.randn_like(actor_obs)* 2. - 1.) * obs_noise
-        # print("noise_scales", noise_scales)
-        # print("obs_noise", obs_noise)
-        buf_dict[obs_key] = (actor_obs + (torch.rand_like(actor_obs)* 2. - 1.) * obs_noise) * obs_scale
+        noisy_obs = apply_obs_noise(actor_obs, noise_cfg, current_noise_curriculum_value)
+        buf_dict[obs_key] = noisy_obs * obs_scales[obs_key]
 
 
 def export_policy_as_jit(actor_critic, path):

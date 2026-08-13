@@ -13,16 +13,16 @@ env:
       # progress 는 reset 이 발생한 스텝마다 degree 만큼 증감, [0,1] 클립.
       # 4096 envs 에선 거의 매 스텝 reset 이 있어 ~24 call/iter → 0.00002 면 건강한 학습 기준 ~2k iter 에 full range
       degree: 0.00002
-      level_up_threshold: 400    # average_episode_length(step) 이 이보다 크면 확장
-      level_down_threshold: 200  # 이보다 작으면 축소
-      # tracking 게이트: walk 커맨드 env 의 tracking_lin_vel 원값(exp, [0,1]) EMA 가
-      # 이 값을 넘어야만 level-up. 서있기(생존)만으로 range 가 확장되는 것을 차단.
-      # 서있는 정책의 EMA 는 range 가 커질수록 하락 → progress ~0.3 부근에서 자연 정지.
+      level_down_threshold: 200  # average_episode_length(step) 이 이보다 작으면 축소
+      # level-up 게이트: Isaac Lab lin_vel_cmd_levels 와 동일한 지표
+      # episode_sums["tracking_lin_vel"]/max_episode_length_s 를 weight 로 정규화한
+      # [0,1] 값이 이 값을 넘어야 확장. 조기 종료하면 분자만 줄어 점수가 떨어지므로
+      # 생존이 지표에 내장되어 있다 → epl level_up 조건은 불필요(제거됨).
       tracking_level_up_threshold: 0.8
-      tracking_ema_alpha: 0.001  # step 당 EMA 계수 (시정수 ~1000 step ≈ 40 iter)
+      tracking_ema_alpha: 0.001  # reset 당 EMA 계수 (~24 call/iter → 시정수 ≈ 40 iter)
       initial_progress: 0.0      # resume 시 진행도를 이어서 시작할 때 지정
       initial_ranges:            # progress=0 범위; 최종 범위는 locomotion_command_ranges
-        lin_vel_x: [-0.2, 0.3]
-        lin_vel_y: [-0.4, 0.4]
-        ang_vel_yaw: [-0.3, 0.3]
+        lin_vel_x: [-0.1, 0.1]
+        lin_vel_y: [-0.1, 0.1]
+        ang_vel_yaw: [-1.0, 1.0]
         # heading 은 명시하지 않으면 처음부터 최종 범위 사용

@@ -36,6 +36,10 @@ class LeggedRobotLocomotion(LeggedRobotBase):
             (self.num_envs, 4), dtype=torch.float32, device=self.device
         )
         self.command_ranges = self.config.locomotion_command_ranges
+        # IsaacLab UniformVelocityCommand.is_standing_env 대응 — 정지 env 를 마스크로
+        # 영속 보유한다. legged_gym 의 "norm 이 작으면 0" 방식과 달리 정지 비율이
+        # command_ranges 넓이와 무관하게 rel_standing_envs 로 고정된다.
+        self.is_standing_env = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self.feet_air_time_positive_biped = torch.zeros_like(self.feet_air_time)
         self.feet_contact_time_positive_biped = torch.zeros_like(self.feet_air_time)
 
@@ -109,6 +113,12 @@ class LeggedRobotLocomotion(LeggedRobotBase):
             self.command_ranges["ang_vel_yaw"][0],
             self.command_ranges["ang_vel_yaw"][1]
         )
+        # 정지 env 는 heading 제어 결과까지 덮어써서 0 으로 만든다
+        # (IsaacLab UniformVelocityCommand._update_command 와 동일한 순서).
+        # resample 때 한 번만 0 을 넣으면 heading 드리프트로 yaw 커맨드가 되살아나
+        # "정책은 stand 로 듣는데 리워드는 보행을 요구"하는 불일치가 생긴다.
+        if not self.is_evaluating:
+            self.commands[self.is_standing_env, :3] = 0.0
 
     def _post_physics_step(self):
         super()._post_physics_step()
@@ -129,20 +139,18 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=str(self.device)).squeeze(1)
         self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
-        # set small commands to zero
-        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) >= 0.1).unsqueeze(1)
-
-        # 일부 env 에 명시적 standstill(정지) 커맨드를 배정 — 랜덤 속도만으로는
-        # 정지 명령(norm<0.2)이 ~3%만 나와 정책이 "가만히 서있기"를 거의 못 배움.
-        # standstill: lin vel 0 + 목표 heading = 현재 heading (yaw command ≈ 0 → 회전도 없음)
+        # 정지 env 배정 (IsaacLab UniformVelocityCommand._resample_command 와 동일):
+        # 확률로 마스크만 정하고, 실제 0 대입은 매 스텝 _update_tasks_callback 에서 한다.
+        #
+        # legged_gym 의 "set small commands to zero" (norm < 0.2 면 0) 는 제거했다.
+        # 그 방식은 range >> threshold 를 암묵 전제하는데(legged_gym 기본 [-1,1]^2 에서
+        # 약 3%), command curriculum 이 range 를 좁히면 전제가 깨진다
+        # (initial_ranges [-0.1,0.1]^2 에서는 78.5% 가 정지로 뭉개졌음).
+        # IsaacLab 2.3 에는 이 로직이 없고 rel_standing_envs 확률만 쓴다.
         stand_prob = self.config.get("locomotion_stand_still_prob", 0.0)
-        if stand_prob > 0.0:
-            stand_mask = torch.rand(len(env_ids), device=self.device) < stand_prob
-            if stand_mask.any():
-                stand_ids = env_ids[stand_mask]
-                self.commands[stand_ids, :2] = 0.0
-                forward = quat_apply(self.base_quat[stand_ids], self.forward_vec[stand_ids])
-                self.commands[stand_ids, 3] = torch.atan2(forward[:, 1], forward[:, 0])
+        self.is_standing_env[env_ids] = (
+            torch.rand(len(env_ids), device=self.device) <= stand_prob
+        )
 
 
     def _reset_tasks_callback(self, env_ids):
@@ -207,9 +215,35 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.feet_air_time += self.dt
         # rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) # reward only on first contact with the ground
         rew_airTime = torch.sum((torch.clamp(self.feet_air_time, max=0.45) - 0.3) * first_contact, dim=1)
-        rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
+        rew_airTime *= ~self.is_standing_env  # no reward for zero command
         self.feet_air_time *= ~contact_filt
         return rew_airTime
+
+    def _gait_motion_gate(self):
+        """gait 리워드를 커맨드가 아니라 실제 달성 속도로 게이트한다.
+
+        커맨드만 보는 게이트는 위상 시계만 맞추면 만점이라 제자리걸음으로
+        gait 리워드를 전부 수확할 수 있다 (20260813 런: contact raw 0.85/2.0,
+        feet_clearance raw 0.81 인데 tracking_lin_vel 은 0.53 정체).
+
+        커맨드 조건은 유지하고(정지 명령엔 gait 리워드 없음) 그 위에 실제 속도로
+        [0,1] 연속 스케일을 곱해 임계값 cliff 를 피한다. 제자리 선회도 스텝이
+        필요하므로 ang vel 을 함께 본다.
+        """
+        lin_thr = float(self.config.rewards.get("gait_gate_lin_vel_threshold", 0.1))
+        ang_thr = float(self.config.rewards.get("gait_gate_ang_vel_threshold", 0.1))
+
+        # 커맨드 크기 임계값 대신 is_standing_env 마스크를 쓴다. 커맨드 제로화를
+        # 없앤 뒤로는 작은 커맨드도 "천천히 걸어라" 라는 정상 명령이므로,
+        # 크기로 walk/stand 를 되짚으면 안 된다. 실제 이동량은 achieved 가 본다.
+        cmd_active = ~self.is_standing_env
+
+        achieved = torch.clamp(
+            torch.maximum(torch.norm(self.base_lin_vel[:, :2], dim=1) / lin_thr,
+                          torch.abs(self.base_ang_vel[:, 2]) / ang_thr),
+            max=1.0,
+        )
+        return cmd_active.float() * achieved
 
     def _reward_feet_air_time_positive_biped(self):
         """Reward time spent in single stance, following Isaac Lab's biped reward."""
@@ -239,7 +273,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
 
         threshold = float(self.config.rewards.get("feet_air_time_positive_biped_threshold", 0.4))
         reward = torch.clamp(reward, max=threshold)
-        reward *= torch.norm(self.commands[:, :2], dim=1) > 0.1
+        reward *= self._gait_motion_gate()
         return reward
 
     def _reward_penalty_in_the_air(self):
@@ -276,9 +310,12 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         return torch.sum(torch.square(left_gravity[:, :2]), dim=1)**0.5 + torch.sum(torch.square(right_gravity[:, :2]), dim=1)**0.5
 
     def _reward_penalty_feet_slippage(self):
-        # assert self.simulator._rigid_body_vel.shape[1] == 20
-        foot_vel = self.simulator._rigid_body_vel[:, self.feet_indices]
-        return torch.sum(torch.norm(foot_vel, dim=-1) * (torch.norm(self.simulator.contact_forces[:, self.feet_indices, :], dim=-1) > 1.), dim=1)
+        # IsaacLab feet_slide 와 동일하게 xy 성분만 본다(body_lin_vel_w[..., :2]).
+        # 기존 3D norm 은 착지/이지 순간의 수직 속도까지 미끄러짐으로 벌줘서,
+        # 끌기가 아니라 정상적인 발 들기를 억제했다.
+        foot_vel_xy = self.simulator._rigid_body_vel[:, self.feet_indices, :2]
+        contact = torch.norm(self.simulator.contact_forces[:, self.feet_indices, :], dim=-1) > 1.
+        return torch.sum(torch.norm(foot_vel_xy, dim=-1) * contact, dim=1)
 
     def _reward_feet_clearance(self):
         """Reward moving feet for remaining close to the target clearance height."""
@@ -298,13 +335,14 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         )
         velocity_weight = torch.tanh(tanh_mult * feet_xy_speed)
         weighted_error = feet_height_error * velocity_weight
-        return torch.exp(-torch.sum(weighted_error, dim=1) / std)
+        # 게이트 없이는 발이 멈춰 있을 때 velocity_weight=0 → exp(0)=1.0 만점이라
+        # 정지가 최적해가 된다. 실제 이동 중에만 지급한다.
+        return torch.exp(-torch.sum(weighted_error, dim=1) / std) * self._gait_motion_gate()
 
 
     def _reward_penalty_feet_height(self):
         # Penalize base height away from target
-        moving = (torch.norm(self.commands[:, :2], dim=1) >= 0.1) \
-        | (torch.abs(self.commands[:, 2]) >= 0.1)
+        moving = ~self.is_standing_env
         feet_height = self.simulator._rigid_body_pos[:,self.feet_indices, 2]
         dif = torch.abs(feet_height - self.config.rewards.feet_height_target)
         dif = torch.min(dif, dim=1).values # [num_env], # select the foot closer to target
@@ -316,8 +354,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         # 접촉 게이트는 "발을 아예 안 떼면 평가 대상에서 빠지는" 구조라 질질 끄는 보행이
         # 벌점 0 이 되고, 반대로 살짝 뗀 발(제곱오차 최대 지점)만 처벌받아 들기 학습을
         # 막았다. 위상 게이트는 접촉 여부로 도망갈 수 없어 끌기를 직접 벌한다.
-        moving = (torch.norm(self.commands[:, :2], dim=1) >= 0.1) \
-            | (torch.abs(self.commands[:, 2]) >= 0.1)
+        moving = ~self.is_standing_env
         is_swing = self.leg_phase >= self.gait_stance_threshold
         feet_height = self.simulator._rigid_body_pos[:, self.feet_indices, 2]
         height_error = torch.square(feet_height - self.config.rewards.feet_height_target)
@@ -371,8 +408,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
 
     def _reward_penalty_stand_still(self):
         # zero command에서 발을 떼거나 움직이면 벌점 — 제자리 gait 스테핑 방지
-        zero_cmd = (torch.norm(self.commands[:, :2], dim=1) < 0.1) \
-            & (torch.abs(self.commands[:, 2]) < 0.1)
+        zero_cmd = self.is_standing_env
         contact = self.simulator.contact_forces[:, self.feet_indices, 2] > 1.
         feet_off_ground = (~contact).sum(dim=1).float()
         feet_xy_vel = torch.norm(
@@ -387,8 +423,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         return phase_time
 
     def _reward_contact(self):
-        moving = (torch.norm(self.commands[:, :2], dim=1) >= 0.1) \
-            | (torch.abs(self.commands[:, 2]) >= 0.1)
+        moving = self._gait_motion_gate()
         res = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
         for i in range(len(self.feet_indices)):
             is_stance = self.leg_phase[:, i] < self.gait_stance_threshold
@@ -468,13 +503,11 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         # 커맨드에서 파생 → train/eval/deploy 에서 항상 일관됨
         # (standstill 은 lin vel 정확히 0, walk 는 norm>0.2 이라 0.1 로 분리됨)
         #
-        # yaw 조건까지 포함해야 리워드 게이트와 일치한다: _reward_contact 등의
-        # moving = (‖cmd[:2]‖≥0.1) | (|cmd[2]|≥0.1) 이고 _reward_penalty_stand_still 의
-        # zero_cmd 는 그 여집합이다. lin vel 만 보면 heading 드리프트로 yaw 커맨드가
-        # 0.1 을 넘었을 때 "정책은 stand 로 듣고 리워드는 보행을 요구"하는 불일치가 생긴다.
-        is_stand = (torch.norm(self.commands[:, :2], dim=1, keepdim=True) < 0.1) \
-            & (torch.abs(self.commands[:, 2:3]) < 0.1)
-        return is_stand.float()
+        # is_standing_env 마스크를 그대로 쓴다. 예전에는 커맨드 크기 임계값으로
+        # 역산했는데(‖cmd[:2]‖<0.1 & |cmd[2]|<0.1), 정지 env 의 yaw 커맨드가
+        # heading 드리프트로 되살아나면 신호가 흔들렸다. 이제 정지 env 는 매 스텝
+        # commands[:, :3] 이 0 으로 유지되므로 마스크와 커맨드가 항상 일치한다.
+        return self.is_standing_env.unsqueeze(1).float()
 
     def _get_obs_phase_time(self):
         return self.phase_time.unsqueeze(1)

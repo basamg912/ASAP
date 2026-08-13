@@ -410,10 +410,22 @@ class LeggedRobotBase(BaseTask):
             self._update_obs_noise_curriculum()
 
     def _update_obs_noise_curriculum(self):
-        if self.average_episode_length < self.config.obs.soft_dof_pos_curriculum_level_down_threshold:
-            self.current_noise_curriculum_value *= (1 - self.config.obs.soft_dof_pos_curriculum_degree)
-        elif self.average_episode_length > self.config.rewards.reward_penalty_level_up_threshold:
-            self.current_noise_curriculum_value *= (1 + self.config.obs.soft_dof_pos_curriculum_degree)
+        # 기존 키 이름(soft_dof_pos_curriculum_*)은 dof_pos limit 커리큘럼에서 복사된
+        # 것이라 의미가 맞지 않았다. noise_curriculum_* 로 정리하고 구 키는 폴백 유지.
+        # 또한 level-up 임계값이 config.rewards.reward_penalty_level_up_threshold 를
+        # 읽고 있어 obs 쪽 level_up 설정이 죽어 있었다 — obs 설정을 쓰도록 수정.
+        obs_cfg = self.config.obs
+        degree = obs_cfg.get("noise_curriculum_degree",
+                             obs_cfg.get("soft_dof_pos_curriculum_degree", 0.0))
+        down_thr = obs_cfg.get("noise_curriculum_level_down_threshold",
+                               obs_cfg.get("soft_dof_pos_curriculum_level_down_threshold", 0.0))
+        up_thr = obs_cfg.get("noise_curriculum_level_up_threshold",
+                             obs_cfg.get("soft_dof_pos_curriculum_level_up_threshold", float("inf")))
+
+        if self.average_episode_length < down_thr:
+            self.current_noise_curriculum_value *= (1 - degree)
+        elif self.average_episode_length > up_thr:
+            self.current_noise_curriculum_value *= (1 + degree)
 
         self.current_noise_curriculum_value = np.clip(self.current_noise_curriculum_value,
                                                       self.config.obs.noise_value_min,
@@ -810,7 +822,12 @@ class LeggedRobotBase(BaseTask):
 
 
     def _push_robots(self, env_ids):
-        """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity.
+        """ Random pushes the robots. Emulates an impulse by adding to the base velocity.
+
+        IsaacLab mdp.push_by_setting_velocity 와 동일하게 기존 속도에 '더한다'.
+        legged_gym 방식(대입)은 로봇의 현재 운동량을 지워버려서, 0.5 m/s 로 걷던
+        로봇을 0.3 으로 "밀면" 오히려 감속시키는 텔레포트가 된다 — 외란이 아니라
+        속도 리셋이라 회복 정책을 제대로 학습시키지 못한다.
         """
         if len(env_ids) == 0:
             return
@@ -818,7 +835,7 @@ class LeggedRobotBase(BaseTask):
         max_vel = self.config.domain_rand.max_push_vel_xy
         self.push_robot_vel_buf[env_ids] = torch_rand_float(-max_vel, max_vel, (len(env_ids), 2), device=str(self.device))  # lin vel x/y
         self.record_push_robot_vel_buf[env_ids] = self.push_robot_vel_buf[env_ids].clone()
-        self.simulator.robot_root_states[env_ids, 7:9] = self.push_robot_vel_buf[env_ids]
+        self.simulator.robot_root_states[env_ids, 7:9] += self.push_robot_vel_buf[env_ids]
         # self.gym.set_actor_root_state_tensor(self.sim, gymtorch.unwrap_tensor(self.simulator.all_root_states))
 
 
