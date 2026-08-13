@@ -22,7 +22,7 @@ env:
       tracking_ema_alpha: 0.001  # step 당 EMA 계수 (시정수 ~1000 step ≈ 40 iter)
       initial_progress: 0.0      # resume 시 진행도를 이어서 시작할 때 지정
       initial_ranges:            # progress=0 범위; 최종 범위는 locomotion_command_ranges
-        lin_vel_x: [-0.4, 0.4]
+        lin_vel_x: [-0.2, 0.3]
         lin_vel_y: [-0.4, 0.4]
         ang_vel_yaw: [-0.3, 0.3]
         # heading 은 명시하지 않으면 처음부터 최종 범위 사용

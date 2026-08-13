@@ -89,7 +89,7 @@ rewards:
   gait_offsets: [0.0, 0.5]
   gait_stance_threshold: 0.55
 
-  reward_penalty_curriculum: False
+  reward_penalty_curriculum: True
   reward_initial_penalty_scale : 0.1
   reward_min_penalty_scale: 0.0
   reward_max_penalty_scale: 1.0
