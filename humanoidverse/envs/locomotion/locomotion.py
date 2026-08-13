@@ -36,6 +36,8 @@ class LeggedRobotLocomotion(LeggedRobotBase):
             (self.num_envs, 4), dtype=torch.float32, device=self.device
         )
         self.command_ranges = self.config.locomotion_command_ranges
+        self.feet_air_time_positive_biped = torch.zeros_like(self.feet_air_time)
+        self.feet_contact_time_positive_biped = torch.zeros_like(self.feet_air_time)
 
     def _init_gait_params(self):
         # Initialize the normalized period of the swing phase
@@ -44,35 +46,40 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.a_stance = 0.5 # start of the stance phase
         self.b_stance = 1.0 # end of the stance phase
         self.kappa = 4.0 # shared variance in Von Mises
-        self.left_offset = 0.0 # left foot offset
-        self.right_offset = 0.5 # right foot offset
+
+        self.T = float(self.config.rewards.get("gait_period", 1.0))
+        if self.T <= 0.0:
+            raise ValueError("rewards.gait_period must be greater than zero")
+
+        gait_offsets = list(self.config.rewards.get("gait_offsets", [0.0, 0.5]))
+        if len(gait_offsets) != len(self.feet_indices):
+            raise ValueError(
+                "rewards.gait_offsets must contain one offset for each foot "
+                f"({len(self.feet_indices)} expected, got {len(gait_offsets)})"
+            )
+        self.gait_offsets = torch.tensor(
+            gait_offsets, dtype=torch.float32, device=self.device
+        )
+        self.left_offset = float(gait_offsets[0])
+        self.right_offset = float(gait_offsets[1])
+
+        self.gait_stance_threshold = float(
+            self.config.rewards.get("gait_stance_threshold", 0.55)
+        )
+        if not 0.0 < self.gait_stance_threshold < 1.0:
+            raise ValueError("rewards.gait_stance_threshold must be between zero and one")
 
         self.left_feet_height = torch.zeros(self.num_envs, device=self.device) # left feet height
         self.right_feet_height = torch.zeros(self.num_envs, device=self.device) # right feet height
 
         self.phase_time = torch.zeros(self.num_envs, dtype=torch.float32, requires_grad=False, device=self.device)
         self.phase_time_np = np.zeros(self.num_envs, dtype=np.float32)
-        self.phase_left = (self.phase_time + self.left_offset) % 1
-        self.phase_right = (self.phase_time + self.right_offset) % 1
-        self.leg_phase = torch.cat([self.phase_left.unsqueeze(1), self.phase_right.unsqueeze(1)], dim=-1)
-
-        # Initialize the gait period
-        if hasattr(self.config.rewards, "gait_period"):
-            if not self.config.rewards.gait_period:
-                self.T = self.config.rewards.gait_period # gait period in seconds # gait period in seconds
-            else:
-                self.T = 1. # gait period in seconds
-        else:
-            self.T = 1.
-
-        if hasattr(self.config.rewards, "gait_period"):
-            # Randomize the gait phase time
-            if self.config.obs.use_phase:
-                self.phi_offset = np.random.rand(self.num_envs)*self.T
-            else:
-                self.phi_offset = np.zeros(self.num_envs)
-        else:
-            self.phi_offset = np.zeros(self.num_envs)
+        self.leg_phase = (
+            self.phase_time.unsqueeze(1) + self.gait_offsets.unsqueeze(0)
+        ) % 1.0
+        self.phase_left = self.leg_phase[:, 0]
+        self.phase_right = self.leg_phase[:, 1]
+        self.phi_offset = np.zeros(self.num_envs, dtype=np.float32)
         # Initialize the target arm joint positions
         self.swing_arm_joint_pos = torch.tensor([-1.04, 0.0, 0.0, 1.57,
                                                 0.0, 0.0, 0.0], device=self.device, dtype=torch.float, requires_grad=False)
@@ -111,9 +118,11 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         # Update the phase time
         self.phase_time_np = self._calc_phase_time()
         self.phase_time = torch.tensor(self.phase_time_np, device=self.device, dtype=torch.float, requires_grad=False)
-        self.phase_left = (self.phase_time + self.left_offset) % 1
-        self.phase_right = (self.phase_time + self.right_offset) % 1
-        self.leg_phase = torch.cat([self.phase_left.unsqueeze(1), self.phase_right.unsqueeze(1)], dim=-1)
+        self.leg_phase = (
+            self.phase_time.unsqueeze(1) + self.gait_offsets.unsqueeze(0)
+        ) % 1.0
+        self.phase_left = self.leg_phase[:, 0]
+        self.phase_right = self.leg_phase[:, 1]
 
     def _resample_commands(self, env_ids):
         self.commands[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=str(self.device)).squeeze(1)
@@ -121,7 +130,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
         # set small commands to zero
-        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) >= 0.1).unsqueeze(1)
 
         # 일부 env 에 명시적 standstill(정지) 커맨드를 배정 — 랜덤 속도만으로는
         # 정지 명령(norm<0.2)이 ~3%만 나와 정책이 "가만히 서있기"를 거의 못 배움.
@@ -138,6 +147,8 @@ class LeggedRobotLocomotion(LeggedRobotBase):
 
     def _reset_tasks_callback(self, env_ids):
         super()._reset_tasks_callback(env_ids)
+        self.feet_air_time_positive_biped[env_ids] = 0.0
+        self.feet_contact_time_positive_biped[env_ids] = 0.0
         if not self.is_evaluating:
             self._resample_commands(env_ids)
 
@@ -200,6 +211,37 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.feet_air_time *= ~contact_filt
         return rew_airTime
 
+    def _reward_feet_air_time_positive_biped(self):
+        """Reward time spent in single stance, following Isaac Lab's biped reward."""
+        contact = self.simulator.contact_forces[:, self.feet_indices, 2] > 1.0
+
+        self.feet_contact_time_positive_biped = torch.where(
+            contact,
+            self.feet_contact_time_positive_biped + self.dt,
+            torch.zeros_like(self.feet_contact_time_positive_biped),
+        )
+        self.feet_air_time_positive_biped = torch.where(
+            contact,
+            torch.zeros_like(self.feet_air_time_positive_biped),
+            self.feet_air_time_positive_biped + self.dt,
+        )
+
+        in_mode_time = torch.where(
+            contact,
+            self.feet_contact_time_positive_biped,
+            self.feet_air_time_positive_biped,
+        )
+        single_stance = torch.sum(contact.int(), dim=1) == 1
+        reward = torch.min(
+            torch.where(single_stance.unsqueeze(-1), in_mode_time, torch.zeros_like(in_mode_time)),
+            dim=1,
+        ).values
+
+        threshold = float(self.config.rewards.get("feet_air_time_positive_biped_threshold", 0.4))
+        reward = torch.clamp(reward, max=threshold)
+        reward *= torch.norm(self.commands[:, :2], dim=1) > 0.1
+        return reward
+
     def _reward_penalty_in_the_air(self):
         contact = self.simulator.contact_forces[:, self.feet_indices, 2] > 1.
         contact_filt = torch.logical_or(contact, self.last_contacts)
@@ -238,6 +280,26 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         foot_vel = self.simulator._rigid_body_vel[:, self.feet_indices]
         return torch.sum(torch.norm(foot_vel, dim=-1) * (torch.norm(self.simulator.contact_forces[:, self.feet_indices, :], dim=-1) > 1.), dim=1)
 
+    def _reward_feet_clearance(self):
+        """Reward moving feet for remaining close to the target clearance height."""
+        target_height = float(
+            self.config.rewards.get(
+                "feet_clearance_target_height",
+                self.config.rewards.feet_height_target,
+            )
+        )
+        std = float(self.config.rewards.get("feet_clearance_std", 0.05))
+        tanh_mult = float(self.config.rewards.get("feet_clearance_tanh_mult", 2.0))
+
+        feet_height = self.simulator._rigid_body_pos[:, self.feet_indices, 2]
+        feet_height_error = torch.square(feet_height - target_height)
+        feet_xy_speed = torch.norm(
+            self.simulator._rigid_body_vel[:, self.feet_indices, :2], dim=2
+        )
+        velocity_weight = torch.tanh(tanh_mult * feet_xy_speed)
+        weighted_error = feet_height_error * velocity_weight
+        return torch.exp(-torch.sum(weighted_error, dim=1) / std)
+
 
     def _reward_penalty_feet_height(self):
         # Penalize base height away from target
@@ -256,7 +318,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         # 막았다. 위상 게이트는 접촉 여부로 도망갈 수 없어 끌기를 직접 벌한다.
         moving = (torch.norm(self.commands[:, :2], dim=1) >= 0.1) \
             | (torch.abs(self.commands[:, 2]) >= 0.1)
-        is_swing = self.leg_phase >= 0.55  # _reward_contact 의 is_stance 와 동일 기준
+        is_swing = self.leg_phase >= self.gait_stance_threshold
         feet_height = self.simulator._rigid_body_pos[:, self.feet_indices, 2]
         height_error = torch.square(feet_height - self.config.rewards.feet_height_target)
         return torch.sum(height_error * is_swing, dim=1) * moving
@@ -328,8 +390,8 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         moving = (torch.norm(self.commands[:, :2], dim=1) >= 0.1) \
             | (torch.abs(self.commands[:, 2]) >= 0.1)
         res = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
-        for i in range(2): # left and right feet
-            is_stance = self.leg_phase[:, i] < 0.55
+        for i in range(len(self.feet_indices)):
+            is_stance = self.leg_phase[:, i] < self.gait_stance_threshold
             contact = self.simulator.contact_forces[:, self.feet_indices[i], 2] > 1
             res += ~(contact ^ is_stance) # XOR 연산 이후 not
         return res * moving
