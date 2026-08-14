@@ -13,7 +13,7 @@ rewards:
       tracking_ang_vel: 0.5
       penalty_lin_vel_z: -2.0
       penalty_ang_vel_xy: -0.05
-      penalty_orientation: -0.5
+      penalty_orientation: -5.0
       penalty_feet_ori: -1.0
       # termination: -50.0
       alive: 0.15
@@ -51,7 +51,7 @@ rewards:
       upperbody_joint_angle_freeze: -0.1
       penalty_hip_pos: -0.5
       penalty_waist_pos: -0.2
-      penalty_torso_ori: -0.05
+      # penalty_torso_ori: -0.05
 
   reward_tracking_sigma:
     lin_vel: 0.25
