@@ -12,7 +12,7 @@ from typing import Tuple, Dict
 
 from humanoidverse.envs.env_utils.general import class_to_dict
 from isaac_utils.rotations import get_euler_xyz_in_tensor
-from isaac_utils.rotations import quat_apply_yaw, wrap_to_pi
+from isaac_utils.rotations import quat_apply_yaw, wrap_to_pi, xyzw_to_wxyz
 from humanoidverse.envs.base_task.base_task import BaseTask
 
 from humanoidverse.envs.env_utils.history_handler import HistoryHandler
@@ -844,49 +844,117 @@ class LeggedRobotBase(BaseTask):
     ################ ENV CALLBACKS #################
 
     def _reset_dofs(self, env_ids, target_state=None):
-        """ Resets DOF position and velocities of selected environmments
-        Positions are randomly selected within 0.5:1.5 x default positions.
-        Velocities are set to zero.
-        If target_state is not None, reset to target_state
+        """Reset DOF positions and velocities of selected environments.
+
+        When no target state is supplied, reset pose randomization is controlled
+        by ``domain_rand.randomize_reset_dof_pos``.
 
         Args:
-            env_ids (List[int]): Environemnt ids
+            env_ids (List[int]): Environment ids
             target_state (Tensor): Target state
         """
         if target_state is not None:
             self.simulator.dof_pos[env_ids] = target_state[..., 0]
             self.simulator.dof_vel[env_ids] = target_state[..., 1]
         else:
-            self.simulator.dof_pos[env_ids] = self.default_dof_pos * torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=str(self.device))
-            # self.simulator.dof_pos[env_ids] = self.default_dof_pos
-            # import ipdb; ipdb.set_trace()
+            randomize_reset_dof_pos = self.config.domain_rand.get("randomize_reset_dof_pos", True)
+            if randomize_reset_dof_pos:
+                scale_range = self.config.domain_rand.get("reset_dof_pos_scale_range", [0.5, 1.5])
+                dof_pos_scale = torch_rand_float(
+                    scale_range[0],
+                    scale_range[1],
+                    (len(env_ids), self.num_dof),
+                    device=str(self.device),
+                )
+                self.simulator.dof_pos[env_ids] = self.default_dof_pos * dof_pos_scale
+            else:
+                self.simulator.dof_pos[env_ids] = self.default_dof_pos
 
             self.simulator.dof_vel[env_ids] = 0.
 
 
+    def _sample_uniform_ranges(self, ranges, keys, num_samples, dtype):
+        range_list = [ranges.get(key, (0.0, 0.0)) for key in keys]
+        bounds = torch.tensor(range_list, device=self.device, dtype=dtype)
+        return bounds[:, 0] + (bounds[:, 1] - bounds[:, 0]) * torch.rand(
+            (num_samples, len(keys)), device=self.device, dtype=dtype
+        )
+
     def _reset_root_states(self, env_ids, target_root_states=None):
-        """ Resets ROOT states position and velocities of selected environmments
-            if target_root_states is not None, reset to target_root_states
+        """Reset root state using IsaacLab-style pose and velocity deltas.
+
+        The default position is translated by the environment origin and sampled
+        XYZ offset. The sampled RPY rotation is composed with the default
+        orientation, and sampled velocity is added to the default velocity.
+
         Args:
-            env_ids (List[int]): Environemnt ids
+            env_ids (List[int]): Environment ids
             target_root_states (Tensor): Target root states
         """
         if target_root_states is not None:
             self.simulator.robot_root_states[env_ids] = target_root_states
             self.simulator.robot_root_states[env_ids, :3] += self.env_origins[env_ids]
+            return
 
+        domain_rand = self.config.domain_rand
+        dtype = self.simulator.robot_root_states.dtype
+        num_resets = len(env_ids)
+        root_states = self.base_init_state.repeat(num_resets, 1)
+        root_states[:, :3] += self.env_origins[env_ids]
+
+        legacy_reset_config = "randomize_reset_root_state" not in domain_rand
+        legacy_randomize_velocity = False
+        if not legacy_reset_config:
+            randomize_root_state = domain_rand.randomize_reset_root_state
+            pose_range = domain_rand.get("reset_root_pose_range", {})
+            velocity_range = domain_rand.get("reset_root_velocity_range", {})
         else:
-            # base position
-            if self.custom_origins:
-                self.simulator.robot_root_states[env_ids] = self.base_init_state
-                self.simulator.robot_root_states[env_ids, :3] += self.env_origins[env_ids]
-                self.simulator.robot_root_states[env_ids, :2] += torch_rand_float(-1., 1., (len(env_ids), 2), device=str(self.device)) # xy position within 1m of the center
-            else:
-                self.simulator.robot_root_states[env_ids] = self.base_init_state
-                self.simulator.robot_root_states[env_ids, :3] += self.env_origins[env_ids]
-            # base velocities
+            # Preserve archived configs that predate the IsaacLab-style reset keys.
+            randomize_position = domain_rand.get("randomize_reset_root_position", True)
+            legacy_randomize_velocity = domain_rand.get("randomize_reset_root_velocity", True)
+            randomize_root_state = randomize_position or legacy_randomize_velocity
+            pose_range = {}
+            if self.custom_origins and randomize_position:
+                pose_range = domain_rand.get(
+                    "reset_root_position_range", {"x": [-1.0, 1.0], "y": [-1.0, 1.0]}
+                )
+            legacy_velocity_range = domain_rand.get("reset_root_velocity_range", {})
+            velocity_range = (
+                {
+                    "x": legacy_velocity_range.get("lin_vel_x", [-0.5, 0.5]),
+                    "y": legacy_velocity_range.get("lin_vel_y", [-0.5, 0.5]),
+                    "z": legacy_velocity_range.get("lin_vel_z", [-0.5, 0.5]),
+                    "roll": legacy_velocity_range.get("ang_vel_x", [-0.5, 0.5]),
+                    "pitch": legacy_velocity_range.get("ang_vel_y", [-0.5, 0.5]),
+                    "yaw": legacy_velocity_range.get("ang_vel_z", [-0.5, 0.5]),
+                }
+                if legacy_randomize_velocity
+                else {}
+            )
 
-            self.simulator.robot_root_states[env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6), device=str(self.device)) # [7:10]: lin vel, [10:13]: ang vel
+        default_orientation = self.base_init_state[3:7].repeat(num_resets, 1)
+        if randomize_root_state:
+            pose_delta = self._sample_uniform_ranges(
+                pose_range, ("x", "y", "z", "roll", "pitch", "yaw"), num_resets, dtype
+            )
+            root_states[:, :3] += pose_delta[:, :3]
+            orientation_delta = quat_from_euler_xyz(
+                pose_delta[:, 3], pose_delta[:, 4], pose_delta[:, 5]
+            )
+            default_orientation = quat_mul(default_orientation, orientation_delta)
+            velocity_delta = self._sample_uniform_ranges(
+                velocity_range, ("x", "y", "z", "roll", "pitch", "yaw"), num_resets, dtype
+            )
+            if legacy_reset_config and legacy_randomize_velocity:
+                root_states[:, 7:13] = velocity_delta
+            elif not legacy_reset_config:
+                root_states[:, 7:13] += velocity_delta
+
+        if self.config.simulator.config.name == "isaacsim":
+            root_states[:, 3:7] = xyzw_to_wxyz(default_orientation)
+        else:
+            root_states[:, 3:7] = default_orientation
+        self.simulator.robot_root_states[env_ids] = root_states
 
 
     def _plot_domain_rand_params(self):
