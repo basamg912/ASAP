@@ -7,5 +7,5 @@ wandb:
   wandb_tags: 'online' # 'online' or 'offline' or 'disabled'
   wandb_group: null
   wandb_id: null
-  wandb_entity: agileh2o
+  wandb_entity: null  # null = API key 의 기본 entity. 원저자 팀(agileh2o)은 권한 없음(403)
   wandb_dir: ${experiment_dir}/.wandb

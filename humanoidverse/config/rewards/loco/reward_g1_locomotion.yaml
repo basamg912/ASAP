@@ -48,9 +48,9 @@ rewards:
       feet_clearance: 1.0
 
       # 5) Robot's Default Pose
-      upperbody_joint_angle_freeze: -0.1
-      penalty_hip_pos: -0.5
-      penalty_waist_pos: -0.2
+      upperbody_joint_angle_freeze: -0.1 # default arm pose
+      penalty_hip_pos_l1: -1.0     # IsaacLab joint_deviation_legs 정렬 (hip roll/yaw, L1)
+      penalty_waist_pos_l1: -1.0   # IsaacLab joint_deviation_waists 정렬 (L2 -0.2 는 젖힘 못 잡음)
       # penalty_torso_ori: -0.05
 
   reward_tracking_sigma:
@@ -136,8 +136,8 @@ rewards:
     "penalty_close_feet_xy",
     "penalty_ang_vel_xy_torso",
     "penalty_torso_ori",
-    "penalty_waist_pos",
-    "penalty_hip_pos",
+    "penalty_waist_pos_l1",
+    "penalty_hip_pos_l1",
     "penalty_feet_swing_height",
     "penalty_stand_still",
     "feet_clearance",
@@ -150,3 +150,6 @@ env:
         termination_scales:
             termination_gravity_x : 0.8
             termination_gravity_y : 0.8
+            termination_min_base_height: 0.15
+        termination:
+            termination_by_low_height: True

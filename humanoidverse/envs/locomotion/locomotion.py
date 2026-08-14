@@ -388,12 +388,31 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         hip_pos = self.simulator.dof_pos[:, hips_roll_yaw_indices]
         return torch.sum(torch.square(hip_pos), dim=1)
 
+    def _reward_penalty_hip_pos_l1(self):
+        # hip_pos 의 L1 버전 (IsaacLab joint_deviation_l1(legs) 와 동일 커널, roll/yaw 만).
+        # L2 는 0 근처 기울기가 소멸해 작은 편차가 공짜 — waist_pos_l1 과 같은 논리.
+        # 기존 hip_pos 는 절대각 기준이지만 G1 hip roll/yaw default 가 0 이라 동치이고,
+        # default 편차 기준이 다른 로봇에도 안전해 이쪽으로 통일한다.
+        hips_roll_yaw_indices = self.hips_dof_id[1:3] + self.hips_dof_id[4:6]
+        hip_pos = self.simulator.dof_pos[:, hips_roll_yaw_indices]
+        hip_default = self.default_dof_pos[:, hips_roll_yaw_indices]
+        return torch.sum(torch.abs(hip_pos - hip_default), dim=1)
+
     def _reward_penalty_waist_pos(self):
         # 허리(waist_dof_names) 관절이 default 에서 벗어나면 벌점 — 몸통 yaw 비틀림 방지.
         # penalty_torso_ori(중력 기반)는 yaw 불변이라 허리 비틀림을 못 잡음
         waist_pos = self.simulator.dof_pos[:, self.waist_dof_indices]
         waist_default = self.default_dof_pos[:, self.waist_dof_indices]
         return torch.sum(torch.square(waist_pos - waist_default), dim=1)
+
+    def _reward_penalty_waist_pos_l1(self):
+        # waist_pos 의 L1 버전 (IsaacLab joint_deviation_l1 과 동일 커널).
+        # L2 는 0 근처에서 기울기가 소멸해(∂q²∝q) "약간 젖힌" 자세가 사실상 공짜 —
+        # pelvis 를 orientation 으로 강하게 잡으면 waist pitch 가 탈출구가 된다.
+        # L1 은 편차 크기와 무관하게 일정한 복원 압력을 유지한다.
+        waist_pos = self.simulator.dof_pos[:, self.waist_dof_indices]
+        waist_default = self.default_dof_pos[:, self.waist_dof_indices]
+        return torch.sum(torch.abs(waist_pos - waist_default), dim=1)
 
     def _reward_penalty_torso_ori(self):
         # 몸통(torso_name 링크)이 직립에서 기울어지면 벌점.
