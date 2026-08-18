@@ -33,7 +33,7 @@ rewards:
 
       # 3) Robot's Limit
       limits_dof_pos: -5.0
-      # limits_dof_vel: -5.0
+      limits_dof_vel: -5.0
       # limits_torque: -0.1
 
       # 4) Walking Motion
