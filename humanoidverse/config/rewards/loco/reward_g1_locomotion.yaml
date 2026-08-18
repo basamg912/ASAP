@@ -14,20 +14,21 @@ rewards:
       penalty_lin_vel_z: -2.0
       penalty_ang_vel_xy: -0.05
       penalty_orientation: -5.0
-      penalty_feet_ori: -1.0
+      # penalty_feet_ori: -1.0
       # termination: -50.0
       alive: 0.15
       # feet_heading_alignment: -0.1
       # penalty_stand_still: -1.0
 
       # 2) Natural locomotion
-      penalty_torques: -1e-6
+      # penalty_torques: -1e-6
+      energy: -2e-5
       penalty_dof_vel: -0.001
       penalty_dof_acc: -2.5e-7
       penalty_action_rate: -0.05
       # penalty_feet_contact_forces: -0.01
       # penalty_stumble: -10.0
-      penalty_slippage: -0.5
+      penalty_slippage: -0.2
       base_height: -10.0
 
       # 3) Robot's Limit
@@ -42,7 +43,7 @@ rewards:
       # penalty_in_the_air: -100.0
       # feet_max_height_for_this_air: -100.0
       # penalty_ang_vel_xy_torso: -0.0
-      penalty_close_feet_xy: -0.05
+      # penalty_close_feet_xy: -0.05
       contact: 0.5
       # penalty_feet_swing_height: -3.0
       feet_clearance: 1.0
@@ -91,7 +92,8 @@ rewards:
   desired_feet_max_height_for_this_air: 0.12
   desired_base_height: 0.78
   close_feet_threshold: 0.15
-  feet_clearance_target_height: 0.1
+  # Active feet_clearance target. Keep aligned with feet_height_target above.
+  feet_clearance_target_height: 0.12
   feet_clearance_std: 0.05
   feet_clearance_tanh_mult: 2.0
   gait_period: 0.8
@@ -117,6 +119,7 @@ rewards:
     "penalty_ang_vel_xy",
     "penalty_orientation",
     "penalty_torques",
+    "energy",
     "penalty_dof_acc",
     "penalty_dof_vel",
     "penalty_action_rate",
@@ -150,6 +153,6 @@ env:
         termination_scales:
             termination_gravity_x : 0.8
             termination_gravity_y : 0.8
-            termination_min_base_height: 0.15
+            termination_min_base_height: 0.10
         termination:
             termination_by_low_height: True

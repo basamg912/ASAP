@@ -220,30 +220,36 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         return rew_airTime
 
     def _gait_motion_gate(self):
-        """gait 리워드를 커맨드가 아니라 실제 달성 속도로 게이트한다.
+        """Gate gait rewards by matching commanded and achieved motion magnitudes.
 
         커맨드만 보는 게이트는 위상 시계만 맞추면 만점이라 제자리걸음으로
         gait 리워드를 전부 수확할 수 있다 (20260813 런: contact raw 0.85/2.0,
         feet_clearance raw 0.81 인데 tracking_lin_vel 은 0.53 정체).
 
-        커맨드 조건은 유지하고(정지 명령엔 gait 리워드 없음) 그 위에 실제 속도로
-        [0,1] 연속 스케일을 곱해 임계값 cliff 를 피한다. 제자리 선회도 스텝이
-        필요하므로 ang vel 을 함께 본다.
+        실제 속도만 보는 게이트는 작은 커맨드에서도 threshold 속도까지 과속하면
+        gait 리워드가 최대가 되는 반대 loophole 이 있다. command와 achieved gate의
+        최솟값을 써서 정지 정책은 계속 0점으로 두되, 과속으로 gate를 키울 수 없게
+        한다. 선형 이동과 제자리 선회는 서로의 gate를 대신 채우지 않도록 분리한다.
         """
         lin_thr = float(self.config.rewards.get("gait_gate_lin_vel_threshold", 0.1))
         ang_thr = float(self.config.rewards.get("gait_gate_ang_vel_threshold", 0.1))
+        if lin_thr <= 0.0 or ang_thr <= 0.0:
+            raise ValueError("gait motion gate thresholds must be greater than zero")
 
-        # 커맨드 크기 임계값 대신 is_standing_env 마스크를 쓴다. 커맨드 제로화를
-        # 없앤 뒤로는 작은 커맨드도 "천천히 걸어라" 라는 정상 명령이므로,
-        # 크기로 walk/stand 를 되짚으면 안 된다. 실제 이동량은 achieved 가 본다.
-        cmd_active = ~self.is_standing_env
+        cmd_lin = torch.norm(self.commands[:, :2], dim=1)
+        achieved_lin = torch.norm(self.base_lin_vel[:, :2], dim=1)
+        cmd_ang = torch.abs(self.commands[:, 2])
+        achieved_ang = torch.abs(self.base_ang_vel[:, 2])
 
-        achieved = torch.clamp(
-            torch.maximum(torch.norm(self.base_lin_vel[:, :2], dim=1) / lin_thr,
-                          torch.abs(self.base_ang_vel[:, 2]) / ang_thr),
-            max=1.0,
+        lin_gate = torch.minimum(
+            torch.clamp(cmd_lin / lin_thr, max=1.0),
+            torch.clamp(achieved_lin / lin_thr, max=1.0),
         )
-        return cmd_active.float() * achieved
+        ang_gate = torch.minimum(
+            torch.clamp(cmd_ang / ang_thr, max=1.0),
+            torch.clamp(achieved_ang / ang_thr, max=1.0),
+        )
+        return (~self.is_standing_env).float() * torch.maximum(lin_gate, ang_gate)
 
     def _reward_feet_air_time_positive_biped(self):
         """Reward time spent in single stance, following Isaac Lab's biped reward."""
@@ -443,12 +449,18 @@ class LeggedRobotLocomotion(LeggedRobotBase):
 
     def _reward_contact(self):
         moving = self._gait_motion_gate()
-        res = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
-        for i in range(len(self.feet_indices)):
-            is_stance = self.leg_phase[:, i] < self.gait_stance_threshold
-            contact = self.simulator.contact_forces[:, self.feet_indices[i], 2] > 1
-            res += ~(contact ^ is_stance) # XOR 연산 이후 not
-        return res * moving
+        expected_contact = self.leg_phase < self.gait_stance_threshold
+        contact = self.simulator.contact_forces[:, self.feet_indices, 2] > 1.0
+        per_foot_match = torch.sum(contact == expected_contact, dim=1).float()
+
+        # 단일지지 위상에서는 실제로도 한 발만 접촉해야 한다. 기존 per-foot 합산은
+        # 양발을 계속 붙여도 stance 쪽 발의 점수(주기 평균 raw 1.1/2.0)를 지급해
+        # standing 정책이 contact reward를 수확할 수 있었다. 의도된 double-support
+        # 구간(gait_stance_threshold=0.55이면 주기의 10%)은 그대로 허용한다.
+        expected_single_support = torch.sum(expected_contact, dim=1) == 1
+        actual_single_support = torch.sum(contact, dim=1) == 1
+        support_count_valid = ~expected_single_support | actual_single_support
+        return per_foot_match * support_count_valid.float() * moving
 
     def calculate_phase_expectation(self, phi, offset=0, phase="swing"):
         """

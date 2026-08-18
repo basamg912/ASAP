@@ -701,6 +701,12 @@ class LeggedRobotBase(BaseTask):
         # Penalize torques
         return torch.sum(torch.square(self.torques), dim=1)
 
+    def _reward_energy(self):
+        """Penalize absolute joint mechanical power, matching Unitree RL Lab."""
+        return torch.sum(
+            torch.abs(self.simulator.dof_vel) * torch.abs(self.torques), dim=1
+        )
+
     def _reward_penalty_dof_vel(self):
         # Penalize dof velocities
         return torch.sum(torch.square(self.simulator.dof_vel), dim=1)
