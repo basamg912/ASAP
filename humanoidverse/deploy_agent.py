@@ -9,7 +9,7 @@
 
 [locomotion] velocity command 로 구동하며 +num_rollouts(기본 runs_per_motion)회 수집,
     locomotion_run<n>.pt 로 저장. 커맨드는 아래 중 하나:
-      - +algo.config.eval_command=[vx,vy,yaw,heading] → 전 rollout 고정
+      - +algo.config.eval_command=[vx,vy,yaw_rate] → 전 rollout 고정
       - 미지정 시 command range 에서 매 rollout 랜덤 샘플 (+randomize_command=False 로 끄면 0 커맨드)
     MUJOCO_GL=egl python humanoidverse/deploy_agent.py +simulator=mujoco \
         +checkpoint=logs/kapex_locomotion/.../model_36000.pt +num_envs=1 \
@@ -304,7 +304,7 @@ def main(override_config: OmegaConf):
     else:
         # --------------------------------------------------------------
         # Locomotion: velocity command 로 구동하여 num_rollouts 회 수집
-        #   +algo.config.eval_command=[vx,vy,yaw,heading] → 고정 커맨드
+        #   +algo.config.eval_command=[vx,vy,yaw_rate] → 고정 커맨드
         #   미지정 시 매 rollout 마다 command range 에서 랜덤 샘플 (데이터 다양성)
         # --------------------------------------------------------------
         n_rollouts = int(config.get("num_rollouts", runs_per_motion))
@@ -325,7 +325,8 @@ def main(override_config: OmegaConf):
             # (locomotion._reset_tasks_callback) rollout 전에 세팅하면 유지된다.
             if eval_command is not None:
                 c = torch.tensor(list(eval_command), dtype=torch.float32, device=device)
-                env.commands[:, : len(c)] = c
+                command_size = min(c.numel(), env.commands.shape[1])
+                env.commands[:, :command_size] = c[:command_size]
             elif randomize_command:
                 env._resample_commands(all_env_ids)
             cmd_used = env.commands[0].detach().cpu().tolist()

@@ -9,9 +9,7 @@ eval_agent.py 와 같은 방식으로 체크포인트/시뮬레이터를 띄우�
     (한 env 에서 커맨드를 바꿔가며 기록하면 전환 구간이 섞이고 시간도 오래 걸림)
   - warmup_steps 동안은 버리고(정책이 해당 커맨드의 정상 상태에 도달할 시간),
     이후 record_steps 만큼 기록한다.
-  - yaw 커맨드는 env 가 매 스텝 heading 오차로 commands[:,2] 를 덮어쓰므로
-    (locomotion.py:_update_tasks_callback) 직접 쓸 수 없다. 목표 heading 을
-    `heading + 2*wz` 로 매 스텝 갱신해 원하는 yaw rate 를 만든다.
+  - yaw 커맨드는 commands[:,2]에 yaw rate로 직접 지정한다.
 
 지원 actor:
   - PPOActorWithStudentEncoder (ppo_hist v2/v3): student(enc_obs) -> (v̂, z)
@@ -102,20 +100,9 @@ def assign_commands(env, cmd_grid, device):
     return per_env, idx
 
 
-def apply_heading_command(env, wz_per_env):
-    """원하는 yaw rate 가 나오도록 목표 heading 을 갱신.
-
-    env 는 매 스텝 commands[:,2] = clip(0.5*wrap_to_pi(commands[:,3] - heading)) 로
-    덮어쓰므로, commands[:,3] = heading + 2*wz 로 두면 commands[:,2] ≈ wz 가 된다.
-    """
-    import torch
-
-    # locomotion.py 와 동일한 2-인자 quat_apply (isaac_utils 쪽은 w_last 인자가 더 있음)
-    from humanoidverse.utils.torch_utils import quat_apply
-
-    forward = quat_apply(env.base_quat, env.forward_vec)
-    heading = torch.atan2(forward[:, 1], forward[:, 0])
-    env.commands[:, 3] = heading + 2.0 * wz_per_env
+def apply_yaw_rate_command(env, wz_per_env):
+    """Assign direct yaw-rate commands, matching the locomotion environment."""
+    env.commands[:, 2] = wz_per_env
 
 
 def widen_eval_command_ranges(env):
@@ -148,7 +135,7 @@ def collect(env, algo, torch, num_warmup, num_record, cmd_grid, device):
     actor_state = {"done_indices": [], "stop": False}
 
     for step in range(total):
-        apply_heading_command(env, wz)
+        apply_yaw_rate_command(env, wz)
         with torch.no_grad():
             action, z, v = encoder_forward(
                 actor, obs_dict["actor_obs"].to(device), obs_dict["encoder_obs"].to(device)
@@ -159,7 +146,6 @@ def collect(env, algo, torch, num_warmup, num_record, cmd_grid, device):
             buf["latent"].append(z.cpu().numpy())
             buf["vel_pred"].append(v.cpu().numpy() if v is not None else np.zeros(0))
             buf["base_lin_vel"].append(env.base_lin_vel.detach().cpu().numpy())
-            # commands[:,2] 는 env 가 heading 으로 채운 실제 yaw 커맨드
             buf["command"].append(env.commands[:, [0, 1, 2]].detach().cpu().numpy())
             phase = getattr(env, "phase_time", None)
             buf["phase"].append(

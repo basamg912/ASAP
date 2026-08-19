@@ -18,7 +18,6 @@ env:
       lin_vel_x: [-1.0, 1.0]
       lin_vel_y: [-1.0, 1.0]
       ang_vel_yaw: [-1.0, 1.0]
-      heading: [-3.14, 3.14]
     locomotion_command_resampling_time: 10.0
     obs_history:
       history_len: 0
@@ -36,6 +35,7 @@ env:
       termination_max_base_ang_vel : 5.0
       termination_gravity_x : 0.8
       termination_gravity_y : 0.8
+      termination_orientation_limit : 0.8
       
 
 

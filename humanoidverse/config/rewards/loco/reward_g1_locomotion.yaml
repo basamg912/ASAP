@@ -9,8 +9,8 @@ rewards:
   only_positive_rewards: False
   reward_scales:
       # 1) Task Related
-      tracking_lin_vel: 1.0
-      tracking_ang_vel: 0.5
+      tracking_lin_vel: 1.5
+      tracking_ang_vel: 1.0
       penalty_lin_vel_z: -2.0
       penalty_ang_vel_xy: -0.05
       penalty_orientation: -5.0
@@ -153,6 +153,7 @@ env:
         termination_scales:
             termination_gravity_x : 0.8
             termination_gravity_y : 0.8
+            termination_orientation_limit : 0.8
             termination_min_base_height: 0.10
         termination:
-            termination_by_low_height: True
+            terminate_by_low_height: True

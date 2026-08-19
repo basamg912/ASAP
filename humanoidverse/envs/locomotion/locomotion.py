@@ -12,8 +12,8 @@ from typing import Tuple, Dict
 from rich.progress import Progress
 
 from humanoidverse.envs.env_utils.general import class_to_dict
-from isaac_utils.rotations import quat_apply_yaw, wrap_to_pi
 from humanoidverse.envs.legged_base_task.legged_robot_base import LeggedRobotBase
+from humanoidverse.utils.math import quat_apply_yaw
 # from humanoidverse.envs.env_utils.command_generator import CommandGenerator
 from scipy.stats import vonmises
 
@@ -33,7 +33,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
     def _init_buffers(self):
         super()._init_buffers()
         self.commands = torch.zeros(
-            (self.num_envs, 4), dtype=torch.float32, device=self.device
+            (self.num_envs, 3), dtype=torch.float32, device=self.device
         )
         self.command_ranges = self.config.locomotion_command_ranges
         # IsaacLab UniformVelocityCommand.is_standing_env 대응 — 정지 env 를 마스크로
@@ -96,29 +96,14 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         self.simulator.commands = self.commands
 
     def _update_tasks_callback(self):
-        """ Callback called before computing terminations, rewards, and observations
-            Default behaviour: Compute ang vel command based on target and heading, compute measured terrain heights and randomly push robots
-        """
-        #
+        """Resample direct velocity commands and update the standing mask."""
         super()._update_tasks_callback()
 
-        # commands
         if not self.is_evaluating:
             env_ids = (self.episode_length_buf % int(self.config.locomotion_command_resampling_time / self.dt)==0).nonzero(as_tuple=False).flatten()
             self._resample_commands(env_ids)
-        forward = quat_apply(self.base_quat, self.forward_vec)
-        heading = torch.atan2(forward[:, 1], forward[:, 0])
-        self.commands[:, 2] = torch.clip(
-            0.5 * wrap_to_pi(self.commands[:, 3] - heading),
-            self.command_ranges["ang_vel_yaw"][0],
-            self.command_ranges["ang_vel_yaw"][1]
-        )
-        # 정지 env 는 heading 제어 결과까지 덮어써서 0 으로 만든다
-        # (IsaacLab UniformVelocityCommand._update_command 와 동일한 순서).
-        # resample 때 한 번만 0 을 넣으면 heading 드리프트로 yaw 커맨드가 되살아나
-        # "정책은 stand 로 듣는데 리워드는 보행을 요구"하는 불일치가 생긴다.
         if not self.is_evaluating:
-            self.commands[self.is_standing_env, :3] = 0.0
+            self.commands[self.is_standing_env] = 0.0
 
     def _post_physics_step(self):
         super()._post_physics_step()
@@ -137,7 +122,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
     def _resample_commands(self, env_ids):
         self.commands[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=str(self.device)).squeeze(1)
         self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=str(self.device)).squeeze(1)
-        self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+        self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=str(self.device)).squeeze(1)
 
         # 정지 env 배정 (IsaacLab UniformVelocityCommand._resample_command 와 동일):
         # 확률로 마스크만 정하고, 실제 0 대입은 매 스텝 _update_tasks_callback 에서 한다.
@@ -162,19 +147,26 @@ class LeggedRobotLocomotion(LeggedRobotBase):
 
     def set_is_evaluating(self, command=None):
         super().set_is_evaluating()
-        self.commands = torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
+        self.commands = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         # TODO: haotian: adding command configuration
         if command is not None:
-            # [vx, vy, yaw] 또는 [vx, vy, yaw, heading] — yaw는 매 스텝 heading 오차로
-            # 덮어써지므로, 회전을 원하면 4번째 heading 값으로 지정해야 함
             command = torch.tensor(command, dtype=torch.float32, device=self.device)
-            self.commands[:, : len(command)] = command
+            command_size = min(command.numel(), self.commands.shape[1])
+            self.commands[:, :command_size] = command[:command_size]
 
     ########################### TRACKING REWARDS ###########################
 
+    def _get_base_lin_vel_yaw_frame(self):
+        """Return world linear velocity in the gravity-aligned yaw frame."""
+        root_lin_vel_w = self.simulator.robot_root_states[:, 7:10]
+        return quat_apply_yaw(quat_conjugate(self.base_quat), root_lin_vel_w)
+
+    def _get_lin_vel_tracking_error(self):
+        return self.commands[:, :2] - self._get_base_lin_vel_yaw_frame()[:, :2]
+
     def _reward_tracking_lin_vel(self):
-        # Tracking of linear velocity commands (xy axes)
-        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+        # Unitree RL Lab: compare XY commands in the gravity-aligned yaw frame.
+        lin_vel_error = torch.sum(torch.square(self._get_lin_vel_tracking_error()), dim=1)
         return torch.exp(-lin_vel_error/self.config.rewards.reward_tracking_sigma.lin_vel)
 
     def _reward_tracking_ang_vel(self):
@@ -316,12 +308,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         return torch.sum(torch.square(left_gravity[:, :2]), dim=1)**0.5 + torch.sum(torch.square(right_gravity[:, :2]), dim=1)**0.5
 
     def _reward_penalty_feet_slippage(self):
-        # IsaacLab feet_slide 와 동일하게 xy 성분만 본다(body_lin_vel_w[..., :2]).
-        # 기존 3D norm 은 착지/이지 순간의 수직 속도까지 미끄러짐으로 벌줘서,
-        # 끌기가 아니라 정상적인 발 들기를 억제했다.
-        foot_vel_xy = self.simulator._rigid_body_vel[:, self.feet_indices, :2]
-        contact = torch.norm(self.simulator.contact_forces[:, self.feet_indices, :], dim=-1) > 1.
-        return torch.sum(torch.norm(foot_vel_xy, dim=-1) * contact, dim=1)
+        return self._reward_penalty_slippage()
 
     def _reward_feet_clearance(self):
         """Reward moving feet for remaining close to the target clearance height."""
@@ -533,11 +520,7 @@ class LeggedRobotLocomotion(LeggedRobotBase):
         # walk/stand 모드 신호: 1 = standstill(정지 명령), 0 = walk(이동 명령).
         # 커맨드에서 파생 → train/eval/deploy 에서 항상 일관됨
         # (standstill 은 lin vel 정확히 0, walk 는 norm>0.2 이라 0.1 로 분리됨)
-        #
-        # is_standing_env 마스크를 그대로 쓴다. 예전에는 커맨드 크기 임계값으로
-        # 역산했는데(‖cmd[:2]‖<0.1 & |cmd[2]|<0.1), 정지 env 의 yaw 커맨드가
-        # heading 드리프트로 되살아나면 신호가 흔들렸다. 이제 정지 env 는 매 스텝
-        # commands[:, :3] 이 0 으로 유지되므로 마스크와 커맨드가 항상 일치한다.
+        # is_standing_env 마스크를 그대로 쓴다.
         return self.is_standing_env.unsqueeze(1).float()
 
     def _get_obs_phase_time(self):

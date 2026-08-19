@@ -623,7 +623,7 @@ class PPO(BaseAlgo):
         self._eval_mode()
         eval_command = self.config.get("eval_command", None)
         if eval_command is not None:
-            # locomotion eval에서 고정 커맨드 지정: +algo.config.eval_command=[vx,vy,yaw,heading]
+            # locomotion eval에서 고정 커맨드 지정: [vx, vy, yaw_rate]
             self.env.set_is_evaluating(command=list(eval_command))
         else:
             self.env.set_is_evaluating()

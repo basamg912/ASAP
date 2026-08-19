@@ -29,7 +29,30 @@ class LeggedRobotBase(BaseTask):
         super().__init__(config, device)
         self._domain_rand_config()
         self._prepare_reward_function()
-        self.history_handler = HistoryHandler(self.num_envs, config.obs.obs_auxiliary, config.obs.obs_dims, device)
+        self.history_include_current = bool(
+            config.obs.get("history_include_current", False)
+        )
+        self.history_oldest_first = bool(
+            config.obs.get("history_oldest_first", False)
+        )
+        fill_on_first_add = bool(
+            config.obs.get("history_fill_on_reset", False)
+        )
+        self.history_handler = HistoryHandler(
+            self.num_envs,
+            config.obs.obs_auxiliary,
+            config.obs.obs_dims,
+            device,
+            fill_on_first_add=fill_on_first_add,
+        )
+        self.critic_history_handler = HistoryHandler(
+            self.num_envs,
+            config.obs.obs_auxiliary,
+            config.obs.obs_dims,
+            device,
+            fill_on_first_add=fill_on_first_add,
+        )
+        self._observation_history_handler = self.history_handler
         self.is_evaluating = False
         self.init_done = True
 
@@ -270,8 +293,8 @@ class LeggedRobotBase(BaseTask):
         for obs_key, obs_val in self.obs_buf_dict.items():
             self.obs_buf_dict[obs_key] = torch.clip(obs_val, -clip_obs, clip_obs)
 
-        for key in self.history_handler.history.keys():
-            self.history_handler.add(key, self.hist_obs_dict[key]) # history 는 0번째, 앞으로 추가됨
+        if not self.history_include_current:
+            self._append_history_observations()
 
         self.extras["to_log"] = self.log_dict
         if self.viewer:
@@ -330,9 +353,17 @@ class LeggedRobotBase(BaseTask):
             self.reset_buf |= torch.any(torch.norm(self.simulator.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
 
         if self.config.termination.terminate_by_gravity:
-            # print(self.projected_gravity)
-            self.reset_buf |= torch.any(torch.abs(self.projected_gravity[:, 0:1]) > self.config.termination_scales.termination_gravity_x, dim=1)
-            self.reset_buf |= torch.any(torch.abs(self.projected_gravity[:, 1:2]) > self.config.termination_scales.termination_gravity_y, dim=1)
+            orientation_limit = self.config.termination_scales.get(
+                "termination_orientation_limit", None
+            )
+            if orientation_limit is not None:
+                tilt_angle = torch.acos(
+                    torch.clamp(-self.projected_gravity[:, 2], -1.0, 1.0)
+                )
+                self.reset_buf |= tilt_angle > float(orientation_limit)
+            else:
+                self.reset_buf |= torch.any(torch.abs(self.projected_gravity[:, 0:1]) > self.config.termination_scales.termination_gravity_x, dim=1)
+                self.reset_buf |= torch.any(torch.abs(self.projected_gravity[:, 1:2]) > self.config.termination_scales.termination_gravity_y, dim=1)
         if self.config.termination.terminate_by_low_height:
             # import ipdb; ipdb.set_trace()
             self.reset_buf |= torch.any(self.simulator.robot_root_states[:, 2:3] < self.config.termination_scales.termination_min_base_height, dim=1)
@@ -465,6 +496,7 @@ class LeggedRobotBase(BaseTask):
             self._update_average_episode_length(env_ids)
 
             self.history_handler.reset(env_ids)
+            self.critic_history_handler.reset(env_ids)
 
     def get_mppi_buffers(self, env_ids):
         """ Get buffers for MPPI
@@ -537,23 +569,63 @@ class LeggedRobotBase(BaseTask):
         # super().compute_observations()
         self.obs_buf_dict_raw = {}
         self.hist_obs_dict = {}
+        self.critic_hist_obs_dict = {}
 
         if self.add_noise_currculum:
             noise_extra_scale = self.current_noise_curriculum_value
         else:
             noise_extra_scale = 1.
         # print("noise_extra_scale", noise_extra_scale)
+        # Build actor (noisy) and critic (clean) history samples first so the
+        # current sample can be included in the observation returned this step.
+        history_obs_list = self.history_handler.history.keys()
+        parse_observation(self, history_obs_list, self.hist_obs_dict, self.config.obs.obs_scales, self.config.obs.noise_scales, noise_extra_scale)
+        parse_observation(
+            self,
+            history_obs_list,
+            self.critic_hist_obs_dict,
+            self.config.obs.obs_scales,
+            {key: 0.0 for key in self.config.obs.noise_scales.keys()},
+            noise_extra_scale,
+        )
+
+        if self.history_include_current:
+            self._append_history_observations()
+
         # compute Algo observations
         for obs_key, obs_config in self.config.obs.obs_dict.items():
             self.obs_buf_dict_raw[obs_key] = dict()
+            uses_clean_observations = obs_key in {
+                "critic_obs",
+                "teacher_obs",
+                "recon_target",
+            }
+            self._observation_history_handler = (
+                self.critic_history_handler
+                if uses_clean_observations
+                else self.history_handler
+            )
+            noise_scales = (
+                {key: 0.0 for key in self.config.obs.noise_scales.keys()}
+                if uses_clean_observations
+                else self.config.obs.noise_scales
+            )
+            parse_observation(
+                self,
+                obs_config,
+                self.obs_buf_dict_raw[obs_key],
+                self.config.obs.obs_scales,
+                noise_scales,
+                noise_extra_scale,
+            )
 
-            parse_observation(self, obs_config, self.obs_buf_dict_raw[obs_key], self.config.obs.obs_scales, self.config.obs.noise_scales, noise_extra_scale)
-
-        # Compute history observations
-        history_obs_list = self.history_handler.history.keys()
-        parse_observation(self, history_obs_list, self.hist_obs_dict, self.config.obs.obs_scales, self.config.obs.noise_scales, noise_extra_scale)
-
+        self._observation_history_handler = self.history_handler
         self._post_config_observation_callback()
+
+    def _append_history_observations(self):
+        for key in self.history_handler.history.keys():
+            self.history_handler.add(key, self.hist_obs_dict[key])
+            self.critic_history_handler.add(key, self.critic_hist_obs_dict[key])
 
     def _post_config_observation_callback(self):
         self.obs_buf_dict = dict()
@@ -576,7 +648,13 @@ class LeggedRobotBase(BaseTask):
         actions_scaled = actions * self.config.robot.control.action_scale
         control_type = self.config.robot.control.control_type
         if control_type=="P":
-            torques = self._kp_scale * self.p_gains*(actions_scaled + self.default_dof_pos - self.simulator.dof_pos) - self._kd_scale * self.d_gains*self.simulator.dof_vel
+            position_target = actions_scaled + self.default_dof_pos
+            stiffness = self._kp_scale * self.p_gains
+            damping = self._kd_scale * self.d_gains
+            torques = (
+                stiffness * (position_target - self.simulator.dof_pos)
+                - damping * self.simulator.dof_vel
+            )
         elif control_type=="V":
             torques = self._kp_scale * self.p_gains*(actions_scaled - self.simulator.dof_vel) - self._kd_scale * self.d_gains*(self.simulator.dof_vel - self.last_dof_vel)/self.sim_dt
         elif control_type=="T":
@@ -713,7 +791,10 @@ class LeggedRobotBase(BaseTask):
 
     def _reward_penalty_dof_acc(self):
         # Penalize dof accelerations
-        return torch.sum(torch.square((self.last_dof_vel - self.simulator.dof_vel) / self.dt), dim=1)
+        dof_acc = getattr(self.simulator, "dof_acc", None)
+        if dof_acc is None:
+            dof_acc = (self.simulator.dof_vel - self.last_dof_vel) / self.dt
+        return torch.sum(torch.square(dof_acc), dim=1)
 
     def _reward_penalty_action_rate(self):
         # Penalize changes in actions
@@ -756,9 +837,14 @@ class LeggedRobotBase(BaseTask):
             return torch.sum((torch.abs(self.torques) - self.torque_limits * self.config.rewards.reward_limit.soft_torque_limit).clip(min=0.), dim=1)
 
     def _reward_penalty_slippage(self):
-        # assert self.simulator._rigid_body_vel.shape[1] == 20
-        foot_vel = self.simulator._rigid_body_vel[:, self.feet_indices]
-        return torch.sum(torch.norm(foot_vel, dim=-1) * (torch.norm(self.simulator.contact_forces[:, self.feet_indices, :], dim=-1) > 1.), dim=1)
+        foot_vel_xy = self.simulator._rigid_body_vel[:, self.feet_indices, :2]
+        contact_history = getattr(self.simulator, "contact_forces_history", None)
+        if contact_history is None:
+            contact_history = self.simulator.contact_forces.unsqueeze(1)
+        contact = torch.norm(
+            contact_history[:, :, self.feet_indices, :], dim=-1
+        ).amax(dim=1) > 1.0
+        return torch.sum(torch.norm(foot_vel_xy, dim=-1) * contact, dim=1)
 
     def _reward_feet_max_height_for_this_air(self):
         # Reward long steps
@@ -989,44 +1075,33 @@ class LeggedRobotBase(BaseTask):
     def _get_obs_dof_vel(self,):
         return self.simulator.dof_vel
 
-    def _get_obs_history(self,):
-        assert "history" in self.config.obs.obs_auxiliary.keys()
-        history_config = self.config.obs.obs_auxiliary['history']
-        history_key_list = history_config.keys()
+    def _get_observation_history(self, auxiliary_key):
+        assert auxiliary_key in self.config.obs.obs_auxiliary.keys()
+        history_config = self.config.obs.obs_auxiliary[auxiliary_key]
         history_tensors = []
         for key in sorted(history_config.keys()):
-            history_length = history_config[key] # sequence length = 5
-            # [4096, buffer_length, obs_dim] -> [4096, 5, obs_dim], history 는 앞이 최신
-            history_tensor = self.history_handler.query(key)[:, :history_length]
-            history_tensor = history_tensor.reshape(history_tensor.shape[0], -1)  # Shape: [4096, history_length*obs_dim]
+            history_length = history_config[key]
+            history_tensor = self._observation_history_handler.query(key)[
+                :, :history_length
+            ]
+            if self.history_oldest_first:
+                history_tensor = torch.flip(history_tensor, dims=(1,))
+            history_tensor = history_tensor.reshape(history_tensor.shape[0], -1)
             history_tensors.append(history_tensor)
-        # history_length 에는 [4096, history_length*obs_dim_keys] 가 list 로 쌓인 상태
-        return torch.cat(history_tensors, dim=1) # 4096 축은 고정, history_length*obs_dim 축이 합쳐짐
 
+        return torch.cat(history_tensors, dim=1)
+
+    def _get_obs_history(self,):
+        return self._get_observation_history("history")
 
     def _get_obs_short_history(self,):
-        assert "short_history" in self.config.obs.obs_auxiliary.keys()
-        history_config = self.config.obs.obs_auxiliary['short_history']
-        history_key_list = history_config.keys()
-        history_tensors = []
-        for key in sorted(history_config.keys()):
-            history_length = history_config[key]
-            history_tensor = self.history_handler.query(key)[:, :history_length]
-            history_tensor = history_tensor.reshape(history_tensor.shape[0], -1)  # Shape: [4096, history_length*obs_dim]
-            history_tensors.append(history_tensor)
-        return torch.cat(history_tensors, dim=1)
+        return self._get_observation_history("short_history")
+
+    def _get_obs_critic_history(self,):
+        return self._get_observation_history("critic_history")
 
     def _get_obs_long_history(self,):
-        assert "long_history" in self.config.obs.obs_auxiliary.keys()
-        history_config = self.config.obs.obs_auxiliary['long_history']
-        history_key_list = history_config.keys()
-        history_tensors = []
-        for key in sorted(history_config.keys()):
-            history_length = history_config[key]
-            history_tensor = self.history_handler.query(key)[:, :history_length]
-            history_tensor = history_tensor.reshape(history_tensor.shape[0], -1)  # Shape: [4096, history_length*obs_dim]
-            history_tensors.append(history_tensor)
-        return torch.cat(history_tensors, dim=1)
+        return self._get_observation_history("long_history")
 
     def _get_obs_actions(self,):
         return self.actions

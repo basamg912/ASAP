@@ -78,6 +78,10 @@ obs:
       command_stand: 5,
     }
 
+  history_include_current: True
+  history_fill_on_reset: True
+  history_oldest_first: True
+
   obs_scales: {
     base_lin_vel: 2.0,
     base_ang_vel: 0.25,
@@ -101,14 +105,14 @@ obs:
   soft_dof_pos_curriculum_level_down_threshold: 100
   soft_dof_pos_curriculum_level_up_threshold: 900
   noise_scales: {
-    base_lin_vel: 0.0,
-    base_ang_vel: 0.0,
-    projected_gravity: 0.0,
+    base_lin_vel: {n_min: -0.1, n_max: 0.1},
+    base_ang_vel: {n_min: -0.2, n_max: 0.2},
+    projected_gravity: {n_min: -0.05, n_max: 0.05},
     command_lin_vel: 0.0,
     command_ang_vel: 0.0,
     command_stand: 0.0,
-    dof_pos: 0.0,
-    dof_vel: 0.0,
+    dof_pos: {n_min: -0.01, n_max: 0.01},
+    dof_vel: {n_min: -1.5, n_max: 1.5},
     actions: 0.0,
     history: 0.0,
     short_history: 0.0,

@@ -453,6 +453,14 @@ class IsaacGym(BaseSimulator):
         self.dof_pos = self.dof_state.view(self.num_envs, -1, 2)[..., 0]
         self.dof_vel = self.dof_state.view(self.num_envs, -1, 2)[..., 1]
         self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1, 3) # shape: num_envs, num_bodies, xyz axis
+        self.contact_forces_history = torch.zeros(
+            self.num_envs,
+            3,
+            self.contact_forces.shape[1],
+            3,
+            dtype=self.contact_forces.dtype,
+            device=self.contact_forces.device,
+        )
 
     def refresh_sim_tensors(self):
         self.gym.refresh_dof_state_tensor(self.sim)
@@ -502,6 +510,9 @@ class IsaacGym(BaseSimulator):
         if self.sim_device == 'cpu':
             self.gym.fetch_results(self.sim, True)
         self.gym.refresh_dof_state_tensor(self.sim)
+        self.gym.refresh_net_contact_force_tensor(self.sim)
+        self.contact_forces_history = self.contact_forces_history.roll(1, dims=1)
+        self.contact_forces_history[:, 0] = self.contact_forces
 
     def setup_viewer(self):
         self.enable_viewer_sync = True
@@ -611,10 +622,10 @@ class IsaacGym(BaseSimulator):
                 self.commands[:, 1] += 0.1
                 logger.info(f"Current Command: {self.commands[:, ]}")
             elif evt.action == "heading_left_command" and evt.value > 0:
-                self.commands[:, 3] -= 0.1
+                self.commands[:, 2] -= 0.1
                 logger.info(f"Current Command: {self.commands[:, ]}")
             elif evt.action == "heading_right_command" and evt.value > 0:
-                self.commands[:, 3] += 0.1
+                self.commands[:, 2] += 0.1
                 logger.info(f"Current Command: {self.commands[:, ]}")
             elif evt.action == "zero_command" and evt.value > 0:
                 self.commands[:, :4] = 0

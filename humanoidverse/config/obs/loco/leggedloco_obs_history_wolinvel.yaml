@@ -4,28 +4,11 @@
 obs:
   obs_dict:
     actor_obs: [
-      base_ang_vel,
-      projected_gravity,
-      command_lin_vel,
-      command_ang_vel,
-      command_stand,
-      dof_pos,
-      dof_vel,
-      actions,
       short_history
     ]
 
     critic_obs: [
-      base_lin_vel,
-      base_ang_vel,
-      projected_gravity,
-      command_lin_vel,
-      command_ang_vel,
-      command_stand,
-      dof_pos,
-      dof_vel,
-      actions,
-      short_history
+      critic_history
     ]
 
   # define those coumpounds in obs_dict, for example, you can define different long/short history with different length
@@ -40,6 +23,21 @@ obs:
       command_ang_vel: 5,
       command_stand: 5,
     }
+    critic_history: {
+      base_lin_vel: 5,
+      base_ang_vel: 5,
+      projected_gravity: 5,
+      dof_pos: 5,
+      dof_vel: 5,
+      actions: 5,
+      command_lin_vel: 5,
+      command_ang_vel: 5,
+      command_stand: 5,
+    }
+
+  history_include_current: True
+  history_fill_on_reset: True
+  history_oldest_first: True
 
   obs_scales: {
     base_lin_vel: 2.0,
@@ -51,6 +49,7 @@ obs:
     dof_pos: 1.0,
     dof_vel: 0.05,
     short_history: 1.0,
+    critic_history: 1.0,
     actions: 1.0,
   }
   add_noise_currculum: False
@@ -78,16 +77,17 @@ obs:
   # command_* 와 actions 는 IsaacLab 에서 노이즈를 주지 않는다 — 센서값이 아니라
   # 내부에서 알고 있는 값이라 노이즈가 물리적 의미가 없다. 0.0 으로 유지할 것.
   noise_scales: {
-    base_lin_vel: 0.0,
-    base_ang_vel: 0.0,
-    projected_gravity: 0.0,
+    base_lin_vel: {n_min: -0.1, n_max: 0.1},
+    base_ang_vel: {n_min: -0.2, n_max: 0.2},
+    projected_gravity: {n_min: -0.05, n_max: 0.05},
     command_lin_vel: 0.0,
     command_ang_vel: 0.0,
     command_stand: 0.0,
-    dof_pos: 0.0,
-    dof_vel: 0.0,
+    dof_pos: {n_min: -0.01, n_max: 0.01},
+    dof_vel: {n_min: -1.5, n_max: 1.5},
     actions: 0.0,
     short_history: 0.0,
+    critic_history: 0.0,
   }
 
   # obs_dims should use list instead of dict

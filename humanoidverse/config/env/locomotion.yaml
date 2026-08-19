@@ -19,13 +19,11 @@ env:
       lin_vel_x: [-0.5, 1.0]
       lin_vel_y: [-0.3, 0.3]
       ang_vel_yaw: [-0.2, 0.2]
-      heading: [-3.14, 3.14]
     # 리워드 설정
     # locomotion_command_ranges:
     #   lin_vel_x: [0.4, 0.6]
     #   lin_vel_y: [-0.0, 0.0]
     #   ang_vel_yaw: [-0.0, 0.0]
-    #   heading: [-3.14, 3.14]
 
     locomotion_command_resampling_time: 10.0
     # command 리샘플 시 이 확률로 정지(standstill) 커맨드 배정 — walk/stand 둘 다 학습.
@@ -47,6 +45,7 @@ env:
       # termination_max_base_ang_vel : 5.0
       termination_gravity_x : 0.8
       termination_gravity_y : 0.8
+      termination_orientation_limit : 0.8
 
 
 

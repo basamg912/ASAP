@@ -1,40 +1,17 @@
-'''
-LeggedRobotLocomotionCmdCurriculum: locomotion_command_ranges 를 학습 성과에 따라
-점진 확장하는 command curriculum (unitree_rl_lab 의 lin_vel_cmd_levels 대응).
+'''Command-range curriculum for velocity locomotion.
 
-판정 지표:
-  bootstrap:  progress < bootstrap_until_progress 이고 EPL >= bootstrap_level_up_epl
-              → progress 를 bootstrap 상한까지 확장
-  level-up:   bootstrap 이후 XY velocity error < tracking_error_level_up_threshold
-              → progress += degree
-  level-down: average_episode_length < level_down_threshold → progress -= degree
-  ([0, 1] 클립)
-command_ranges = lerp(initial_ranges, locomotion_command_ranges, progress)
+This follows Unitree RL Lab's ``lin_vel_cmd_levels`` behavior:
 
-XY velocity error 는 매 스텝 body-frame command와 base linear velocity의 L2 오차를
-누적하고 실제 episode 길이로 나눈 값이다. 지수 tracking reward를 gate로 재사용하지
-않으므로 작은 속도 명령에서 정지 정책이 높은 점수를 받는 문제가 없고, vy 오차도
-동일한 gate에 포함된다. 축별 MAE도 진단용으로 함께 기록한다.
+- evaluate completed environments' normalized ``tracking_lin_vel`` episode
+  reward once per horizon;
+- expand only ``lin_vel_x`` and ``lin_vel_y`` by a fixed amount when the score
+  exceeds the configured threshold;
+- clamp both ranges to ``locomotion_command_ranges``;
+- keep yaw at its initial range.
 
-- reset 마다 얻는 episode 평균을 EMA 로 한 번 더 평활한다.
-- 첫 유효 episode 값으로 EMA 를 초기화해 0에서 천천히 상승하는 낙관 편향을 막는다.
-- 초기에는 작은 command의 tracking reward 변별력이 약하므로 EPL로
-  bootstrap_until_progress까지만 확장한다. 그 이후는 다시 실제 XY 추종
-  오차로만 확장해 서 있기 정책이 전 범위를 통과하는 것을 막는다.
-- average_episode_length가 level_down_threshold보다 낮으면 error보다 level-down을
-  우선한다. 짧게 생존한 episode가 우연히 작은 속도 오차를 내고 level-up하는 것을
-  막기 위한 붕괴 안전장치다.
-- 같은 게이트를 reward penalty curriculum 의 level-up 에도 적용한다
-  (_update_reward_penalty_curriculum 오버라이드): gait 를 배우기 전에 모션
-  페널티가 최대에 도달해 서있기를 고착시키는 것을 막는다. level-down 은 그대로.
-
-- 최종 범위는 기존 키 locomotion_command_ranges 그대로 사용
-- initial_ranges 에 없는 키(예: heading)는 처음부터 최종 범위 사용
-- resume 시 initial_progress 로 진행도를 이어서 시작 (checkpoint 에 저장되지 않음)
-- eval(set_is_evaluating) 중에는 갱신하지 않음
-
-기존 파이프라인 무수정 (additive): config/env/locomotion_cmd_curriculum.yaml 이
-_target_ 만 이 클래스로 교체한다. 사용: train_agent.py ... env=locomotion_cmd_curriculum
+Dividing by the full episode duration also makes early termination lower the
+score without a separate episode-length gate. Per-axis velocity errors remain
+available as diagnostics, but do not control the curriculum.
 '''
 import torch
 from loguru import logger
@@ -43,6 +20,9 @@ from humanoidverse.envs.locomotion.locomotion import LeggedRobotLocomotion
 
 
 class LeggedRobotLocomotionCmdCurriculum(LeggedRobotLocomotion):
+    _CURRICULUM_AXES = ("lin_vel_x", "lin_vel_y")
+    _REWARD_THRESHOLD_EPS = 1e-6
+
     def _init_buffers(self):
         super()._init_buffers()
         cc = self.config.get("command_curriculum", None)
@@ -50,36 +30,72 @@ class LeggedRobotLocomotionCmdCurriculum(LeggedRobotLocomotion):
         if not self.use_command_curriculum:
             logger.info("Command curriculum disabled: using static locomotion_command_ranges")
             return
+
         self.command_curriculum_config = cc
-        # config 객체는 건드리지 않고 plain dict 로 소유한다
-        # (self.command_ranges 소비처: _resample_commands, heading→yaw clip)
         self.final_command_ranges = {
-            k: [float(v[0]), float(v[1])]
-            for k, v in self.config.locomotion_command_ranges.items()
+            key: [float(value[0]), float(value[1])]
+            for key, value in self.config.locomotion_command_ranges.items()
         }
         self.initial_command_ranges = {
-            k: ([float(cc.initial_ranges[k][0]), float(cc.initial_ranges[k][1])]
-                if k in cc.initial_ranges else list(v))
-            for k, v in self.final_command_ranges.items()
-        }
-        self.command_curriculum_progress = float(cc.get("initial_progress", 0.0))
-        self.command_curriculum_bootstrap_epl = float(
-            cc.get("bootstrap_level_up_epl", 600)
-        )
-        self.command_curriculum_bootstrap_until_progress = float(
-            cc.get("bootstrap_until_progress", 0.2)
-        )
-        if not 0.0 <= self.command_curriculum_bootstrap_until_progress <= 1.0:
-            raise ValueError("bootstrap_until_progress must be in [0, 1]")
-        if self.command_curriculum_bootstrap_epl <= float(cc.level_down_threshold):
-            raise ValueError(
-                "bootstrap_level_up_epl must be greater than level_down_threshold"
+            key: (
+                [float(cc.initial_ranges[key][0]), float(cc.initial_ranges[key][1])]
+                if key in cc.initial_ranges
+                else list(value)
             )
-        self.command_tracking_error_threshold = float(
-            cc.get("tracking_error_level_up_threshold", 0.06)
+            for key, value in self.final_command_ranges.items()
+        }
+        self.command_ranges = {
+            key: list(value) for key, value in self.initial_command_ranges.items()
+        }
+
+        for axis in self._CURRICULUM_AXES:
+            if axis not in self.command_ranges:
+                raise ValueError(f"Missing command curriculum range: {axis}")
+            initial_lo, initial_hi = self.initial_command_ranges[axis]
+            final_lo, final_hi = self.final_command_ranges[axis]
+            if not final_lo <= initial_lo <= initial_hi <= final_hi:
+                raise ValueError(
+                    f"Initial {axis} range must be inside its final range: "
+                    f"initial={self.initial_command_ranges[axis]}, "
+                    f"final={self.final_command_ranges[axis]}"
+                )
+
+        self.command_curriculum_reward_name = str(
+            cc.get("reward_term_name", "tracking_lin_vel")
         )
+        reward_scales = self.config.rewards.reward_scales
+        if self.command_curriculum_reward_name not in reward_scales:
+            raise ValueError(
+                f"Command curriculum reward is disabled: "
+                f"{self.command_curriculum_reward_name}"
+            )
+        self.command_curriculum_reward_weight = float(
+            reward_scales[self.command_curriculum_reward_name]
+        )
+        if self.command_curriculum_reward_weight <= 0.0:
+            raise ValueError("Command curriculum reward weight must be positive")
+
+        self.command_curriculum_reward_threshold = float(
+            cc.get("tracking_reward_threshold", 0.8)
+        )
+        if not 0.0 <= self.command_curriculum_reward_threshold <= 1.0:
+            raise ValueError("tracking_reward_threshold must be in [0, 1]")
+
+        self.command_curriculum_range_step = float(cc.get("range_step", 0.1))
+        if self.command_curriculum_range_step <= 0.0:
+            raise ValueError("range_step must be greater than zero")
+
+        update_interval = cc.get("update_interval_steps", None)
+        self.command_curriculum_update_interval = int(
+            self.max_episode_length if update_interval is None else update_interval
+        )
+        if self.command_curriculum_update_interval <= 0:
+            raise ValueError("update_interval_steps must be greater than zero")
+        self.command_curriculum_last_update_step = -1
+        self.command_tracking_reward_score = 0.0
+
         self.command_tracking_ema_alpha = float(
-            cc.get("tracking_error_ema_alpha", cc.get("tracking_ema_alpha", 0.001))
+            cc.get("tracking_error_ema_alpha", 0.001)
         )
         self.command_tracking_error = 0.0
         self.command_tracking_error_x = 0.0
@@ -91,24 +107,35 @@ class LeggedRobotLocomotionCmdCurriculum(LeggedRobotLocomotion):
         self.command_tracking_abs_error_sum = torch.zeros(
             self.num_envs, 2, dtype=torch.float32, device=self.device
         )
-        self._apply_command_curriculum()
+        self._refresh_command_curriculum_progress()
+
+        final_xy_ranges = {
+            axis: self.final_command_ranges[axis]
+            for axis in self._CURRICULUM_AXES
+        }
         logger.info(
-            f"Command curriculum enabled: progress={self.command_curriculum_progress:.4f}, "
-            f"initial={self.initial_command_ranges}, final={self.final_command_ranges}, "
-            f"degree={cc.degree}, level_down_epl<{cc.level_down_threshold}, "
-            f"bootstrap_epl>={self.command_curriculum_bootstrap_epl} "
-            f"until_progress={self.command_curriculum_bootstrap_until_progress}, "
-            f"velocity_error_gate<{self.command_tracking_error_threshold} m/s"
+            f"Command curriculum enabled: initial={self.initial_command_ranges}, "
+            f"final_xy={final_xy_ranges}, "
+            f"reward={self.command_curriculum_reward_name}, "
+            f"threshold={self.command_curriculum_reward_threshold}, "
+            f"range_step={self.command_curriculum_range_step}, "
+            f"update_interval={self.command_curriculum_update_interval} steps"
         )
 
-    def _apply_command_curriculum(self):
-        p = min(max(self.command_curriculum_progress, 0.0), 1.0)
-        self.command_curriculum_progress = p
-        self.command_ranges = {
-            k: [lo + (self.final_command_ranges[k][0] - lo) * p,
-                hi + (self.final_command_ranges[k][1] - hi) * p]
-            for k, (lo, hi) in self.initial_command_ranges.items()
-        }
+    def _refresh_command_curriculum_progress(self):
+        progress = []
+        for axis in self._CURRICULUM_AXES:
+            initial_lo, initial_hi = self.initial_command_ranges[axis]
+            current_lo, current_hi = self.command_ranges[axis]
+            final_lo, final_hi = self.final_command_ranges[axis]
+            if initial_lo != final_lo:
+                progress.append((initial_lo - current_lo) / (initial_lo - final_lo))
+            if initial_hi != final_hi:
+                progress.append((current_hi - initial_hi) / (final_hi - initial_hi))
+        self.command_curriculum_progress = min(progress, default=1.0)
+        self.command_curriculum_progress = min(
+            max(self.command_curriculum_progress, 0.0), 1.0
+        )
 
     def _command_tracking_error_metrics(self, env_ids):
         """Return mean episode XY L2 error and per-axis MAE in m/s."""
@@ -127,62 +154,91 @@ class LeggedRobotLocomotionCmdCurriculum(LeggedRobotLocomotion):
             torch.mean(axis_mae[:, 1]).item(),
         )
 
-    def _update_command_curriculum(self, env_ids):
-        cc = self.command_curriculum_config
+    def _update_command_tracking_error_diagnostics(self, env_ids):
         metrics = self._command_tracking_error_metrics(env_ids)
-        if metrics is not None:
-            error, error_x, error_y = metrics
-            if self.command_tracking_error_initialized:
-                a = self.command_tracking_ema_alpha
-                self.command_tracking_error += a * (error - self.command_tracking_error)
-                self.command_tracking_error_x += a * (error_x - self.command_tracking_error_x)
-                self.command_tracking_error_y += a * (error_y - self.command_tracking_error_y)
-            else:
-                self.command_tracking_error = error
-                self.command_tracking_error_x = error_x
-                self.command_tracking_error_y = error_y
-                self.command_tracking_error_initialized = True
+        if metrics is None:
+            return
+        error, error_x, error_y = metrics
+        if self.command_tracking_error_initialized:
+            alpha = self.command_tracking_ema_alpha
+            self.command_tracking_error += alpha * (
+                error - self.command_tracking_error
+            )
+            self.command_tracking_error_x += alpha * (
+                error_x - self.command_tracking_error_x
+            )
+            self.command_tracking_error_y += alpha * (
+                error_y - self.command_tracking_error_y
+            )
+        else:
+            self.command_tracking_error = error
+            self.command_tracking_error_x = error_x
+            self.command_tracking_error_y = error_y
+            self.command_tracking_error_initialized = True
 
-        # 붕괴 중인 짧은 episode는 다른 gate보다 level-down을 우선한다.
-        if self.average_episode_length < cc.level_down_threshold:
-            self.command_curriculum_progress -= cc.degree
-        elif (self.command_curriculum_progress
-              < self.command_curriculum_bootstrap_until_progress):
-            if self.average_episode_length >= self.command_curriculum_bootstrap_epl:
-                self.command_curriculum_progress = min(
-                    self.command_curriculum_progress + cc.degree,
-                    self.command_curriculum_bootstrap_until_progress,
-                )
-        elif (self.command_tracking_error_initialized
-              and self.command_tracking_error < self.command_tracking_error_threshold):
-            self.command_curriculum_progress += cc.degree
-        self._apply_command_curriculum()
+    def _compute_command_tracking_reward_score(self, env_ids):
+        """Return the Unitree-style normalized linear tracking score."""
+        weighted_episode_reward = torch.mean(
+            self.episode_sums[self.command_curriculum_reward_name][env_ids]
+        )
+        normalization = (
+            self.max_episode_length_s * self.command_curriculum_reward_weight
+        )
+        return float((weighted_episode_reward / normalization).item())
+
+    def _expand_linear_command_ranges(self):
+        step = self.command_curriculum_range_step
+        for axis in self._CURRICULUM_AXES:
+            current_lo, current_hi = self.command_ranges[axis]
+            final_lo, final_hi = self.final_command_ranges[axis]
+            self.command_ranges[axis] = [
+                max(current_lo - step, final_lo),
+                min(current_hi + step, final_hi),
+            ]
+        self._refresh_command_curriculum_progress()
+
+    def _update_command_curriculum(self, env_ids):
+        step = int(self.common_step_counter)
+        if step <= 0 or step % self.command_curriculum_update_interval != 0:
+            return
+        if step == self.command_curriculum_last_update_step:
+            return
+        self.command_curriculum_last_update_step = step
+
+        self.command_tracking_reward_score = (
+            self._compute_command_tracking_reward_score(env_ids)
+        )
+        if (
+            self.command_tracking_reward_score
+            > self.command_curriculum_reward_threshold + self._REWARD_THRESHOLD_EPS
+        ):
+            self._expand_linear_command_ranges()
 
     def _update_reward_penalty_curriculum(self):
-        # penalty curriculum 에도 같은 tracking 게이트: 서있기(생존)만으로 epl 이 높은
-        # 동안 모션 페널티가 최대로 올라 걷기 시도를 고착 전에 차단하는 문제 방지
-        # (20260730~31 G1 런들: gait 없이 penalty_scale 1.0 도달 → mean_reward 붕괴).
-        # epl 낮음 → 완화(level-down)는 게이트와 무관하게 base 로직 그대로 동작.
-        if (self.use_command_curriculum
-                and self.average_episode_length > self.config.rewards.reward_penalty_level_up_threshold
-                and (not self.command_tracking_error_initialized
-                     or self.command_tracking_error >= self.command_tracking_error_threshold)):
-            return  # 추종을 못 하는 동안 penalty 인상 보류
+        if (
+            self.use_command_curriculum
+            and self.average_episode_length
+            > self.config.rewards.reward_penalty_level_up_threshold
+            and self.command_tracking_reward_score
+            <= self.command_curriculum_reward_threshold + self._REWARD_THRESHOLD_EPS
+        ):
+            return
         super()._update_reward_penalty_curriculum()
 
     def _update_tasks_callback(self):
         super()._update_tasks_callback()
         if self.use_command_curriculum:
-            velocity_error = self.commands[:, :2] - self.base_lin_vel[:, :2]
+            velocity_error = self._get_lin_vel_tracking_error()
             self.command_tracking_error_sum += torch.norm(velocity_error, dim=1)
             self.command_tracking_abs_error_sum += torch.abs(velocity_error)
 
     def _reset_tasks_callback(self, env_ids):
-        # range 갱신을 먼저 하고 super 를 호출해야 이번 리샘플부터 새 range 가 적용된다.
-        # super 안에서 _update_reward_penalty_curriculum 이 돌므로 error도 여기서 먼저 갱신된다.
-        if self.use_command_curriculum and not self.is_evaluating and len(env_ids) > 0:
-            self._update_command_curriculum(env_ids)
         if self.use_command_curriculum and len(env_ids) > 0:
+            if not self.is_evaluating:
+                # episode_sums are still available here and are cleared after
+                # this callback by reset_envs_idx().
+                self._update_command_curriculum(env_ids)
+            self._update_command_tracking_error_diagnostics(env_ids)
             self.command_tracking_error_sum[env_ids] = 0.0
             self.command_tracking_abs_error_sum[env_ids] = 0.0
         super()._reset_tasks_callback(env_ids)
@@ -190,19 +246,25 @@ class LeggedRobotLocomotionCmdCurriculum(LeggedRobotLocomotion):
     def _post_physics_step(self):
         super()._post_physics_step()
         if self.use_command_curriculum:
-            # error는 에피소드 단위 지표라 reset 시점(_update_command_curriculum)에만 갱신된다.
             self.log_dict["command_curriculum_progress"] = torch.tensor(
-                self.command_curriculum_progress, dtype=torch.float)
-            self.log_dict["command_curriculum_bootstrap_active"] = torch.tensor(
-                self.command_curriculum_progress
-                < self.command_curriculum_bootstrap_until_progress,
-                dtype=torch.float,
+                self.command_curriculum_progress, dtype=torch.float
             )
-            self.log_dict["command_lin_vel_x_max"] = torch.tensor(
-                self.command_ranges["lin_vel_x"][1], dtype=torch.float)
+            self.log_dict["command_tracking_reward_score"] = torch.tensor(
+                self.command_tracking_reward_score, dtype=torch.float
+            )
+            for axis in self._CURRICULUM_AXES:
+                self.log_dict[f"command_{axis}_min"] = torch.tensor(
+                    self.command_ranges[axis][0], dtype=torch.float
+                )
+                self.log_dict[f"command_{axis}_max"] = torch.tensor(
+                    self.command_ranges[axis][1], dtype=torch.float
+                )
             self.log_dict["command_tracking_error"] = torch.tensor(
-                self.command_tracking_error, dtype=torch.float)
+                self.command_tracking_error, dtype=torch.float
+            )
             self.log_dict["command_tracking_error_x"] = torch.tensor(
-                self.command_tracking_error_x, dtype=torch.float)
+                self.command_tracking_error_x, dtype=torch.float
+            )
             self.log_dict["command_tracking_error_y"] = torch.tensor(
-                self.command_tracking_error_y, dtype=torch.float)
+                self.command_tracking_error_y, dtype=torch.float
+            )

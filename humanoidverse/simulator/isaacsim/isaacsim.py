@@ -140,15 +140,15 @@ class IsaacSim(BaseSimulator):
                 },
             )
 
-        # Randomize joint friction
-        if self.domain_rand_config.get("randomize_friction", False):
+        # Joint friction is distinct from rigid-body contact friction.
+        if self.domain_rand_config.get("randomize_joint_friction", False):
             self.events_cfg.random_joint_friction = EventTerm(
                 func=mdp.randomize_joint_parameters,
                 mode="startup",
                 params={
                     "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
                     "friction_distribution_params": tuple(
-                        self.domain_rand_config["friction_range"]
+                        self.domain_rand_config["joint_friction_scale_range"]
                     ),
                     "operation": "scale",
                 },
@@ -291,9 +291,19 @@ class IsaacSim(BaseSimulator):
                 max_depenetration_velocity=1.0,
             ),
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=False,
-                solver_position_iteration_count=4,
-                solver_velocity_iteration_count=0,
+                enabled_self_collisions=not bool(
+                    self.robot_config.asset.get("self_collisions", 1)
+                ),
+                solver_position_iteration_count=int(
+                    self.robot_config.asset.get(
+                        "solver_position_iteration_count", 4
+                    )
+                ),
+                solver_velocity_iteration_count=int(
+                    self.robot_config.asset.get(
+                        "solver_velocity_iteration_count", 0
+                    )
+                ),
             ),
         )
 
@@ -340,7 +350,9 @@ class IsaacSim(BaseSimulator):
             dof_names_list[i]: IdealPDActuatorCfg(
                 joint_names_expr=[dof_names_list[i]],
                 effort_limit=dof_effort_limit_list[i],
+                effort_limit_sim=dof_effort_limit_list[i],
                 velocity_limit=dof_vel_limit_list[i],
+                velocity_limit_sim=dof_vel_limit_list[i],
                 stiffness=0,
                 damping=0,
                 armature=dof_armature_list[i],
@@ -746,14 +758,14 @@ class IsaacSim(BaseSimulator):
             :, [4, 5, 6, 3]
         ]  # (num_envs, 4) 3 isaacsim use wxyz, we keep xyzw for consistency
 
-        self.dof_pos = self._robot.data.joint_pos[
-            :, self.dof_ids
-        ]  # (num_envs, num_dof)
-        self.dof_vel = self._robot.data.joint_vel[:, self.dof_ids]
+        self._refresh_dof_state_tensors()
 
         self.contact_forces = (
             self.contact_sensor.data.net_forces_w
         )  # (num_envs, num_bodies, 3)
+        self.contact_forces_history = (
+            self.contact_sensor.data.net_forces_w_history
+        )
 
         self._rigid_body_pos = self._robot.data.body_pos_w[:, self.body_ids, :]
         self._rigid_body_rot = self._robot.data.body_quat_w[:, self.body_ids][
@@ -761,6 +773,12 @@ class IsaacSim(BaseSimulator):
         ]  # (num_envs, 4) 3 isaacsim use wxyz, we keep xyzw for consistency
         self._rigid_body_vel = self._robot.data.body_lin_vel_w[:, self.body_ids, :]
         self._rigid_body_ang_vel = self._robot.data.body_ang_vel_w[:, self.body_ids, :]
+
+    def _refresh_dof_state_tensors(self):
+        """Cache the latest 200 Hz joint state used by the explicit PD loop."""
+        self.dof_pos = self._robot.data.joint_pos[:, self.dof_ids]
+        self.dof_vel = self._robot.data.joint_vel[:, self.dof_ids]
+        self.dof_acc = self._robot.data.joint_acc[:, self.dof_ids]
 
     def apply_torques_at_dof(self, torques):
         self._robot.set_joint_effort_target(torques, joint_ids=self.dof_ids)
@@ -794,6 +812,7 @@ class IsaacSim(BaseSimulator):
             self.sim.render()
         # update buffers at sim
         self.scene.update(dt=1.0 / self.simulator_config.sim.fps)
+        self._refresh_dof_state_tensors()
 
     def setup_viewer(self):
         self.viewer = self.viewport_camera_controller

@@ -121,6 +121,9 @@ class MuJoCo(BaseSimulator):
         self._body_list = list(self.body_names)
 
         self.data = mj.MjData(self.model)
+        home_key_id = mj.mj_name2id(self.model, mj.mjtObj.mjOBJ_KEY, "home")
+        if home_key_id >= 0:
+            mj.mj_resetDataKeyframe(self.model, self.data, home_key_id)
         # base_init_state = [pos(3), quat_xyzw(4), lin_vel(3), ang_vel(3)]
         init = np.asarray(
             base_init_state.cpu() if torch.is_tensor(base_init_state) else base_init_state,
