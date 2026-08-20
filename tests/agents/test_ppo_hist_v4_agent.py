@@ -18,7 +18,7 @@ from humanoidverse.agents.ppo_hist_v4.ppo_hist_v4 import PPOHistV4
 ACTOR_OBS, CRITIC_OBS, TEACHER_OBS, ACT = 30, 45, 22, 8
 HIST_KEYS = ["actions", "base_ang_vel", "dof_pos", "dof_vel", "projected_gravity"]
 DIMS = {"actions": ACT, "base_ang_vel": 3, "dof_pos": 6, "dof_vel": 6, "projected_gravity": 3}
-T = 5
+T = 4
 ENCODER_OBS = sum(DIMS[k] for k in HIST_KEYS) * T
 MODES = ["critic", "critic_aux", "frozen", "vicreg"]
 

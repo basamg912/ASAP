@@ -38,12 +38,14 @@ obs:
     ]
 
   obs_auxiliary:
+    # actor_obs already contains o_t, so the encoder receives only
+    # [o_{t-4}, ..., o_{t-1}].
     history: {
-      base_ang_vel: 5,
-      projected_gravity: 5,
-      dof_pos: 5,
-      dof_vel: 5,
-      actions: 5,
+      base_ang_vel: 4,
+      projected_gravity: 4,
+      dof_pos: 4,
+      dof_vel: 4,
+      actions: 4,
     }
     short_history: {
       base_ang_vel: 5,
@@ -56,6 +58,7 @@ obs:
       command_stand: 5,
     }
 
+  history_start_offsets: {history: 1}
   history_include_current: True
   history_fill_on_reset: True
   history_oldest_first: True

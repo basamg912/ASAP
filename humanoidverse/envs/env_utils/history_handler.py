@@ -12,21 +12,27 @@ class HistoryHandler:
         obs_dims,
         device,
         fill_on_first_add=False,
+        history_start_offsets=None,
     ):
         self.obs_dims = obs_dims
         self.device = device
         self.num_envs = num_envs
         self.fill_on_first_add = fill_on_first_add
+        self.history_start_offsets = dict(history_start_offsets or {})
         self.history = {}
         self.num_adds = {}
 
         self.buffer_config = {}
         for aux_key, aux_config in history_config.items():
+            start_offset = int(self.history_start_offsets.get(aux_key, 0))
             for obs_key, obs_num in aux_config.items():
+                required_length = int(obs_num) + start_offset
                 if obs_key in self.buffer_config:
-                    self.buffer_config[obs_key] = max(self.buffer_config[obs_key], obs_num)
+                    self.buffer_config[obs_key] = max(
+                        self.buffer_config[obs_key], required_length
+                    )
                 else:
-                    self.buffer_config[obs_key] = obs_num
+                    self.buffer_config[obs_key] = required_length
         
         for key in self.buffer_config.keys():
             self.history[key] = torch.zeros(num_envs, self.buffer_config[key], obs_dims[key], device=self.device)

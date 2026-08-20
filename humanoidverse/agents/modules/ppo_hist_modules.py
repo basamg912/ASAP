@@ -26,7 +26,7 @@ class MLP_mixer(nn.Module):
     def __init__(self, feature_dim, channel_dim, output_dim, hidden_dims, activation="ELU",
                  channel_hidden_dims=None):
         # channel_hidden_dims: channel mixing MLP 전용 hidden (미지정 시 hidden_dims 공유 — 하위호환).
-        # channel 차원(=history 길이, 보통 5)은 작아서 hidden 256 은 과설계 —
+        # channel 차원(=history 길이, 보통 4)은 작아서 hidden 256 은 과설계 —
         # 연산 병목(행 75회 반복)이므로 [64] 수준으로 분리 지정 권장.
         super().__init__()
         self.ln = nn.LayerNorm(feature_dim)

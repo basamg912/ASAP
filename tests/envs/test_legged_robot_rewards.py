@@ -52,6 +52,30 @@ def test_slippage_uses_xy_speed_and_max_contact_over_three_frames():
     assert torch.equal(reward, torch.tensor([6.0]))
 
 
+def test_undesired_contacts_counts_non_ankle_bodies_over_three_frames():
+    env = object.__new__(LeggedRobotBase)
+    env.num_envs = 1
+    env.device = "cpu"
+    # Body 1 represents an ankle and is intentionally absent from these indices.
+    env.undesired_contact_indices = torch.tensor([0, 2, 3])
+    env.config = SimpleNamespace(
+        rewards=AttrDict(undesired_contact_force_threshold=1.0)
+    )
+    contact_history = torch.zeros(1, 3, 4, 3)
+    contact_history[0, 1, 0, 2] = 2.0
+    contact_history[0, 0, 1, 2] = 100.0
+    contact_history[0, 2, 2, 2] = 1.0
+    contact_history[0, 2, 3, 0] = 3.0
+    env.simulator = SimpleNamespace(
+        contact_forces=torch.zeros(1, 4, 3),
+        contact_forces_history=contact_history,
+    )
+
+    reward = env._reward_undesired_contacts()
+
+    assert torch.equal(reward, torch.tensor([2.0]))
+
+
 def test_orientation_termination_uses_total_tilt_angle():
     env = object.__new__(LeggedRobotBase)
     env.reset_buf = torch.zeros(2, dtype=torch.bool)

@@ -2,6 +2,7 @@ from time import time
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import re
 
 from humanoidverse.utils.torch_utils import * # noqa : F405
 # from isaacgym import gymtorch, gymapi, gymutil
@@ -38,12 +39,14 @@ class LeggedRobotBase(BaseTask):
         fill_on_first_add = bool(
             config.obs.get("history_fill_on_reset", False)
         )
+        history_start_offsets = config.obs.get("history_start_offsets", {})
         self.history_handler = HistoryHandler(
             self.num_envs,
             config.obs.obs_auxiliary,
             config.obs.obs_dims,
             device,
             fill_on_first_add=fill_on_first_add,
+            history_start_offsets=history_start_offsets,
         )
         self.critic_history_handler = HistoryHandler(
             self.num_envs,
@@ -51,6 +54,7 @@ class LeggedRobotBase(BaseTask):
             config.obs.obs_dims,
             device,
             fill_on_first_add=fill_on_first_add,
+            history_start_offsets=history_start_offsets,
         )
         self._observation_history_handler = self.history_handler
         self.is_evaluating = False
@@ -80,6 +84,18 @@ class LeggedRobotBase(BaseTask):
         self.last_root_vel = torch.zeros_like(self.simulator.robot_root_states[:, 7:13])
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+        undesired_contact_pattern = self.config.rewards.get(
+            "undesired_contact_body_name_pattern", r"(?!.*ankle.*).*"
+        )
+        self.undesired_contact_indices = torch.tensor(
+            [
+                i
+                for i, body_name in enumerate(self.body_names)
+                if re.fullmatch(undesired_contact_pattern, body_name)
+            ],
+            dtype=torch.long,
+            device=self.device,
+        )
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.simulator.robot_root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.simulator.robot_root_states[:, 10:13])
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
@@ -846,6 +862,22 @@ class LeggedRobotBase(BaseTask):
         ).amax(dim=1) > 1.0
         return torch.sum(torch.norm(foot_vel_xy, dim=-1) * contact, dim=1)
 
+    def _reward_undesired_contacts(self):
+        """Count non-ankle bodies whose recent contact force exceeds the threshold."""
+        if self.undesired_contact_indices.numel() == 0:
+            return torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+
+        contact_history = getattr(self.simulator, "contact_forces_history", None)
+        if contact_history is None:
+            contact_history = self.simulator.contact_forces.unsqueeze(1)
+        threshold = float(
+            self.config.rewards.get("undesired_contact_force_threshold", 1.0)
+        )
+        contact_force = torch.norm(
+            contact_history[:, :, self.undesired_contact_indices, :], dim=-1
+        ).amax(dim=1)
+        return torch.sum((contact_force > threshold).float(), dim=1)
+
     def _reward_feet_max_height_for_this_air(self):
         # Reward long steps
         # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
@@ -1078,11 +1110,15 @@ class LeggedRobotBase(BaseTask):
     def _get_observation_history(self, auxiliary_key):
         assert auxiliary_key in self.config.obs.obs_auxiliary.keys()
         history_config = self.config.obs.obs_auxiliary[auxiliary_key]
+        history_start_offsets = getattr(
+            self.config.obs, "history_start_offsets", {}
+        )
+        start_offset = int(history_start_offsets.get(auxiliary_key, 0))
         history_tensors = []
         for key in sorted(history_config.keys()):
             history_length = history_config[key]
             history_tensor = self._observation_history_handler.query(key)[
-                :, :history_length
+                :, start_offset : start_offset + history_length
             ]
             if self.history_oldest_first:
                 history_tensor = torch.flip(history_tensor, dims=(1,))

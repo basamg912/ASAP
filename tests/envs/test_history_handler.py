@@ -84,3 +84,50 @@ def test_critic_history_stays_clean_when_actor_history_uses_noise():
 
     assert not torch.equal(env.obs_buf_dict["actor_obs"], torch.zeros(1, 3))
     assert torch.equal(env.obs_buf_dict["critic_obs"], torch.zeros(1, 3))
+
+
+def test_encoder_observation_is_four_past_steps_excluding_current():
+    env = object.__new__(LeggedRobotBase)
+    env.config = SimpleNamespace(
+        obs=SimpleNamespace(
+            obs_dict={"encoder_obs": ["history"]},
+            obs_auxiliary={"history": {"signal": 4}},
+            history_start_offsets={"history": 1},
+            obs_scales={"signal": 1.0, "history": 1.0},
+            noise_scales={"signal": 0.0, "history": 0.0},
+        )
+    )
+    env.add_noise_currculum = False
+    env.history_include_current = True
+    env.history_oldest_first = True
+    env.history_handler = HistoryHandler(
+        1,
+        env.config.obs.obs_auxiliary,
+        {"signal": 1},
+        "cpu",
+        fill_on_first_add=True,
+        history_start_offsets=env.config.obs.history_start_offsets,
+    )
+    env.critic_history_handler = HistoryHandler(
+        1,
+        env.config.obs.obs_auxiliary,
+        {"signal": 1},
+        "cpu",
+        fill_on_first_add=True,
+        history_start_offsets=env.config.obs.history_start_offsets,
+    )
+    env._observation_history_handler = env.history_handler
+    current = torch.tensor([[1.0]])
+    env._get_obs_signal = lambda: current
+
+    env._compute_observations()
+    assert torch.equal(
+        env.obs_buf_dict["encoder_obs"], torch.tensor([[1.0, 1.0, 1.0, 1.0]])
+    )
+
+    for value in (2.0, 3.0, 4.0, 5.0):
+        current.fill_(value)
+        env._compute_observations()
+    assert torch.equal(
+        env.obs_buf_dict["encoder_obs"], torch.tensor([[1.0, 2.0, 3.0, 4.0]])
+    )

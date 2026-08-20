@@ -51,7 +51,7 @@ algo:
     encoder_config:               # student (MLP-mixer)
       input_key: encoder_obs
       hidden_dims: [256, 128]     # feature mixing (per-step 75차원) hidden
-      channel_hidden_dims: [64]   # channel mixing (시계열 5차원) hidden
+      channel_hidden_dims: [64]   # channel mixing (과거 시계열 4차원) hidden
       activation: ELU
 
     # ---- v4 additions: deterministic teacher encoder ----

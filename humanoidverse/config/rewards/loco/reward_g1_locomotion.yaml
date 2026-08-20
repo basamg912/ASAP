@@ -29,6 +29,7 @@ rewards:
       # penalty_feet_contact_forces: -0.01
       # penalty_stumble: -10.0
       penalty_slippage: -0.2
+      undesired_contacts: -1.0
       base_height: -10.0
 
       # 3) Robot's Limit
@@ -92,6 +93,8 @@ rewards:
   desired_feet_max_height_for_this_air: 0.12
   desired_base_height: 0.78
   close_feet_threshold: 0.15
+  undesired_contact_force_threshold: 1.0
+  undesired_contact_body_name_pattern: "(?!.*ankle.*).*"
   # Active feet_clearance target. Keep aligned with feet_height_target above.
   feet_clearance_target_height: 0.12
   feet_clearance_std: 0.05
