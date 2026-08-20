@@ -2,6 +2,9 @@
 humanoidverse/data/motions
 ckpt
 motionData/
+.omc/*
+!.omc/skills/
+!.omc/skills/**
 # Compiled Python bytecode
 *.py[cod]
 # Log files
