@@ -48,7 +48,7 @@ def main(config: OmegaConf):
     import wandb
     from humanoidverse.envs.base_task.base_task import BaseTask  # noqa: E402
     from humanoidverse.agents.base_algo.base_algo import BaseAlgo  # noqa: E402
-    from humanoidverse.utils.helpers import pre_process_config
+    from humanoidverse.utils.helpers import pre_process_config, find_resume_checkpoints
     from humanoidverse.utils.logging import HydraLoggerBridge
 
     # resolve=False is important otherwise overrides
@@ -67,8 +67,21 @@ def main(config: OmegaConf):
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger().addHandler(HydraLoggerBridge())
 
-    unresolved_conf = OmegaConf.to_container(config, resolve=False)
     os.chdir(hydra.utils.get_original_cwd())
+
+    # auto_load_latest: 재시작으로 timestamp 가 새로 찍혀 dir 이 갈려도 같은
+    # experiment 의 이전 run dir 에서 최신 체크포인트를 이어받는다.
+    resume_candidates = []
+    if config.checkpoint is None and config.auto_load_latest:
+        resume_candidates = find_resume_checkpoints(config.experiment_dir)
+        if resume_candidates:
+            config.checkpoint = str(resume_candidates[0])
+            logger.info(f"auto_load_latest: resuming from {config.checkpoint}")
+        else:
+            logger.info("auto_load_latest: no previous checkpoint found, starting fresh")
+
+    # 스냅샷은 auto-resume 반영 후에 떠야 config.yaml/wandb 에 실제 checkpoint 가 기록된다
+    unresolved_conf = OmegaConf.to_container(config, resolve=False)
 
     if config.use_wandb:
         project_name = f"{config.project_name}"
@@ -124,7 +137,19 @@ def main(config: OmegaConf):
     algo.setup()
     # import ipdb;    ipdb.set_trace()
     if config.checkpoint is not None:
-        algo.load(config.checkpoint)
+        if resume_candidates:
+            # 최신 ckpt 가 저장 도중 전원 차단 등으로 손상됐을 수 있어 순서대로 fallback
+            for ckpt in resume_candidates:
+                try:
+                    algo.load(str(ckpt))
+                    config.checkpoint = str(ckpt)
+                    break
+                except Exception as e:
+                    logger.warning(f"auto_load_latest: failed to load {ckpt} ({e}); trying older checkpoint")
+            else:
+                raise RuntimeError("auto_load_latest: all candidate checkpoints failed to load")
+        else:
+            algo.load(config.checkpoint)
 
     # handle saving config
     algo.learn()

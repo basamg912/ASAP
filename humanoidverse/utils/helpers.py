@@ -5,9 +5,34 @@ from torch import nn
 import numpy as np
 import random
 
+from pathlib import Path
 from typing import Any, List, Dict
 from termcolor import colored
 from loguru import logger
+
+def find_resume_checkpoints(experiment_dir) -> List[Path]:
+    """auto_load_latest 용: 같은 실험의 이전 run dir 들에서 model_*.pt 후보 수집.
+
+    experiment_dir 이름 규약이 {timestamp}-{experiment_name}-{log_task_name}-{robot_type}
+    이고 timestamp(%Y%m%d_%H%M%S)에는 '-' 가 없으므로, 첫 '-' 이후가 같은
+    sibling dir 을 같은 실험의 이전 run 으로 본다.
+    반환은 (iteration, run dir timestamp) 내림차순 — [0]이 최우선 재개 후보이고,
+    나머지는 손상된 체크포인트(저장 중 전원 차단 등) fallback 용.
+    """
+    experiment_dir = Path(experiment_dir)
+    if "-" not in experiment_dir.name:
+        return []
+    suffix = experiment_dir.name.split("-", 1)[1]
+    candidates = []
+    for run_dir in experiment_dir.parent.glob(f"*-{suffix}"):
+        if run_dir.name.split("-", 1)[1] != suffix:
+            continue
+        for ckpt in run_dir.glob("model_*.pt"):
+            iter_str = ckpt.stem[len("model_"):]
+            if iter_str.isdigit():
+                candidates.append((int(iter_str), run_dir.name, ckpt))
+    candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
+    return [ckpt for _, _, ckpt in candidates]
 
 def class_to_dict(obj) -> dict:
     if not  hasattr(obj,"__dict__"):
