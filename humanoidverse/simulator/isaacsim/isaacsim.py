@@ -666,6 +666,28 @@ class IsaacSim(BaseSimulator):
             "Body names must match the config"
         )
 
+        # ContactSensor owns a separate PhysX view whose body order is not
+        # guaranteed to match the articulation/config order.  All environment
+        # body indices use robot_config.body_names, so reorder contact tensors
+        # to that same order before exposing them through the simulator.
+        contact_body_ids, contact_body_names = self.contact_sensor.find_bodies(
+            self.robot_config.body_names, preserve_order=True
+        )
+        assert contact_body_names == self.robot_config.body_names, (
+            "Contact sensor body names must match the robot config"
+        )
+        logger.debug(
+            f"IsaacSim contact body mapping (robot <- sensor): "
+            f"{list(zip(self.robot_config.body_names, contact_body_ids))}"
+        )
+        if contact_body_ids != list(range(self.num_bodies)):
+            logger.info(
+                "Reordering IsaacSim contact sensor bodies to match robot_config.body_names."
+            )
+            self.contact_body_ids = contact_body_ids
+        else:
+            self.contact_body_ids = slice(None)
+
         # return self.num_dof, self.num_bodies, self.dof_names, self.body_names
 
     def create_envs(self, num_envs, env_origins, base_init_state):
@@ -760,12 +782,12 @@ class IsaacSim(BaseSimulator):
 
         self._refresh_dof_state_tensors()
 
-        self.contact_forces = (
-            self.contact_sensor.data.net_forces_w
-        )  # (num_envs, num_bodies, 3)
-        self.contact_forces_history = (
-            self.contact_sensor.data.net_forces_w_history
-        )
+        self.contact_forces = self.contact_sensor.data.net_forces_w[
+            :, self.contact_body_ids, :
+        ]  # (num_envs, num_bodies, 3), robot config order
+        self.contact_forces_history = self.contact_sensor.data.net_forces_w_history[
+            :, :, self.contact_body_ids, :
+        ]
 
         self._rigid_body_pos = self._robot.data.body_pos_w[:, self.body_ids, :]
         self._rigid_body_rot = self._robot.data.body_quat_w[:, self.body_ids][

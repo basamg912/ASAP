@@ -48,7 +48,8 @@ def main(config: OmegaConf):
     import wandb
     from humanoidverse.envs.base_task.base_task import BaseTask  # noqa: E402
     from humanoidverse.agents.base_algo.base_algo import BaseAlgo  # noqa: E402
-    from humanoidverse.utils.helpers import pre_process_config, find_resume_checkpoints
+    from humanoidverse.utils.helpers import (
+        pre_process_config, find_resume_checkpoints, load_resume_checkpoint)
     from humanoidverse.utils.logging import HydraLoggerBridge
 
     # resolve=False is important otherwise overrides
@@ -138,16 +139,13 @@ def main(config: OmegaConf):
     # import ipdb;    ipdb.set_trace()
     if config.checkpoint is not None:
         if resume_candidates:
-            # 최신 ckpt 가 저장 도중 전원 차단 등으로 손상됐을 수 있어 순서대로 fallback
-            for ckpt in resume_candidates:
-                try:
-                    algo.load(str(ckpt))
-                    config.checkpoint = str(ckpt)
-                    break
-                except Exception as e:
-                    logger.warning(f"auto_load_latest: failed to load {ckpt} ({e}); trying older checkpoint")
+            loaded = load_resume_checkpoint(algo, resume_candidates)
+            if loaded is None:
+                # 이어받을 수 있는 ckpt 가 없으면(구조 변경 등) 죽지 않고 fresh 로 간다
+                logger.warning("auto_load_latest: no loadable checkpoint; starting fresh")
+                config.checkpoint = None
             else:
-                raise RuntimeError("auto_load_latest: all candidate checkpoints failed to load")
+                config.checkpoint = str(loaded)
         else:
             algo.load(config.checkpoint)
 

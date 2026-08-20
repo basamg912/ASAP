@@ -34,6 +34,30 @@ def find_resume_checkpoints(experiment_dir) -> List[Path]:
     candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
     return [ckpt for _, _, ckpt in candidates]
 
+def load_resume_checkpoint(algo, candidates) -> Any:
+    """auto_load_latest 후보들을 순서대로 algo.load 시도. 성공한 Path, 전부 실패면 None.
+
+    state_dict 불일치(config 변경으로 모델 구조가 달라진 경우)는 그 run dir 의
+    모든 ckpt 가 같은 이유로 실패하므로 dir 통째로 스킵. 그 외 오류(저장 중
+    전원 차단으로 인한 파일 손상 등)만 같은 dir 의 다음 후보로 fallback.
+    """
+    bad_dirs = set()
+    for ckpt in candidates:
+        if ckpt.parent in bad_dirs:
+            continue
+        try:
+            algo.load(str(ckpt))
+            return ckpt
+        except Exception as e:
+            if "state_dict" in str(e):
+                bad_dirs.add(ckpt.parent)
+                logger.warning(
+                    f"auto_load_latest: {ckpt.parent.name} incompatible with current model "
+                    f"(config changed?); skipping that run dir")
+            else:
+                logger.warning(f"auto_load_latest: failed to load {ckpt} ({e}); trying next candidate")
+    return None
+
 def class_to_dict(obj) -> dict:
     if not  hasattr(obj,"__dict__"):
         return obj

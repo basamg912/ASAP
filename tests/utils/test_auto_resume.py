@@ -61,3 +61,55 @@ def test_iteration_tie_prefers_newest_run_dir(tmp_path):
     candidates = find_resume_checkpoints(exp_dir)
 
     assert candidates[0] == newer / "model_500.pt"
+
+
+class FakeAlgo:
+    """load() 가 경로별로 성공/실패를 흉내내는 대역."""
+    def __init__(self, mismatch_dirs=(), corrupt_files=()):
+        self.mismatch_dirs = set(mismatch_dirs)
+        self.corrupt_files = set(corrupt_files)
+        self.attempted = []
+
+    def load(self, ckpt_path):
+        p = Path(ckpt_path)
+        self.attempted.append(p)
+        if p.parent in self.mismatch_dirs:
+            raise RuntimeError(
+                "Error(s) in loading state_dict for PPOActorWithStudentEncoder:\n"
+                "\tsize mismatch for student.net.channel_mixing.0.weight")
+        if p in self.corrupt_files:
+            raise RuntimeError("PytorchStreamReader failed reading zip archive")
+
+
+def test_load_skips_whole_dir_on_state_dict_mismatch(tmp_path):
+    from humanoidverse.utils.helpers import load_resume_checkpoint
+    old = _make_run_dir(tmp_path, "20260814_081157", [25700, 25800])  # 구조 변경 전
+    new = _make_run_dir(tmp_path, "20260819_180100", [300, 500])      # 현재 구조
+    candidates = find_resume_checkpoints(tmp_path / f"20260820_120000-{SUFFIX}")
+    algo = FakeAlgo(mismatch_dirs=[old])
+
+    loaded = load_resume_checkpoint(algo, candidates)
+
+    assert loaded == new / "model_500.pt"
+    # 불일치 dir 은 첫 실패 후 통째로 스킵 — 25700 재시도 없음
+    assert algo.attempted == [old / "model_25800.pt", new / "model_500.pt"]
+
+
+def test_load_falls_back_within_dir_on_corrupt_file(tmp_path):
+    from humanoidverse.utils.helpers import load_resume_checkpoint
+    d = _make_run_dir(tmp_path, "20260819_180100", [400, 500])
+    candidates = find_resume_checkpoints(tmp_path / f"20260820_120000-{SUFFIX}")
+    algo = FakeAlgo(corrupt_files=[d / "model_500.pt"])
+
+    loaded = load_resume_checkpoint(algo, candidates)
+
+    assert loaded == d / "model_400.pt"
+
+
+def test_load_returns_none_when_nothing_loadable(tmp_path):
+    from humanoidverse.utils.helpers import load_resume_checkpoint
+    old = _make_run_dir(tmp_path, "20260814_081157", [100])
+    candidates = find_resume_checkpoints(tmp_path / f"20260820_120000-{SUFFIX}")
+    algo = FakeAlgo(mismatch_dirs=[old])
+
+    assert load_resume_checkpoint(algo, candidates) is None
