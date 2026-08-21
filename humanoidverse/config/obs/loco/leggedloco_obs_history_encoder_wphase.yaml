@@ -1,0 +1,119 @@
+# @package _global_
+# humanoidverse/config/obs/loco/leggedloco_obs_history_encoder.yaml
+# Additive copy of leggedloco_obs_history_wolinvel.yaml, restructured for the
+# history-encoder pipeline: short_history removed from actor_obs; a dedicated
+# encoder_obs (history) and recon_target group added.
+obs:
+  obs_dict:
+    actor_obs: [
+      base_ang_vel,
+      projected_gravity,
+      command_lin_vel,
+      command_ang_vel,
+      command_stand,
+      dof_pos,
+      dof_vel,
+      cos_phase,
+      sin_phase,
+      actions
+    ]
+    critic_obs: [
+      base_lin_vel,
+      base_ang_vel,
+      projected_gravity,
+      command_lin_vel,
+      command_ang_vel,
+      command_stand,
+      dof_pos,
+      dof_vel,
+      actions,
+      sin_phase,
+      cos_phase,
+      short_history
+    ]
+    # parse_observation 에서 `get_obs_history()` 함수 실행
+    # obs_dict[encoder_obs] 가 obs_auxiliary 의 history 로 채워짐
+    encoder_obs: [ history ]
+    recon_target: [
+      base_ang_vel,
+      projected_gravity,
+      dof_pos,
+      dof_vel
+    ]
+
+  obs_auxiliary:
+    # actor_obs already contains o_t, so the encoder receives only
+    # [o_{t-4}, ..., o_{t-1}].
+    history: {
+      base_ang_vel: 4,
+      projected_gravity: 4,
+      dof_pos: 4,
+      dof_vel: 4,
+      actions: 4,
+    }
+    short_history: {
+      base_ang_vel: 5,
+      projected_gravity: 5,
+      dof_pos: 5,
+      dof_vel: 5,
+      actions: 5,
+      command_lin_vel: 5,
+      command_ang_vel: 5,
+      command_stand: 5,
+    }
+
+  history_start_offsets: {history: 1}
+  history_include_current: True
+  history_fill_on_reset: True
+  history_oldest_first: True
+
+  obs_scales: {
+    base_lin_vel: 2.0,
+    base_ang_vel: 0.25,
+    projected_gravity: 1.0,
+    command_lin_vel: 1.0,
+    command_ang_vel: 1.0,
+    command_stand: 1.0,
+    dof_pos: 1.0,
+    dof_vel: 0.05,
+    actions: 1.0,
+    history: 1.0,
+    short_history: 1.0,
+    cos_phase: 1.0,
+    sin_phase: 1.0
+  }
+  add_noise_currculum: False
+  noise_initial_value: 0.05
+  noise_value_max: 1.00
+  noise_value_min: 0.00001
+  soft_dof_pos_curriculum_degree: 0.00001
+  soft_dof_pos_curriculum_level_down_threshold: 100
+  soft_dof_pos_curriculum_level_up_threshold: 900
+  noise_scales: {
+    base_lin_vel: {n_min: -0.1, n_max: 0.1},
+    base_ang_vel: {n_min: -0.2, n_max: 0.2},
+    projected_gravity: {n_min: -0.05, n_max: 0.05},
+    command_lin_vel: 0.0,
+    command_ang_vel: 0.0,
+    command_stand: 0.0,
+    dof_pos: {n_min: -0.01, n_max: 0.01},
+    dof_vel: {n_min: -1.5, n_max: 1.5},
+    actions: 0.0,
+    history: 0.0,
+    short_history: 0.0,
+    cos_phase: 0.0,
+    sin_phase: 0.0
+  }
+
+  obs_dims:
+    - base_lin_vel: 3
+    - base_ang_vel: 3
+    - projected_gravity: 3
+    - command_lin_vel: 2
+    - command_ang_vel: 1
+    - command_stand: 1
+    - dof_pos: ${robot.dof_obs_size}
+    - dof_vel: ${robot.dof_obs_size}
+    - actions: ${robot.dof_obs_size}
+    - cos_phase: 1
+    - sin_phase: 1

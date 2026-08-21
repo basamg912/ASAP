@@ -57,20 +57,38 @@ def build_conditions():
     return conds
 
 
-def measured_sigma(ckpt_dir, obs_scales):
+def measured_sigma(ckpt_dir, obs_scales, ckpt_num=None, npz_path=None):
     """obs_stats npz 에서 obs 키별 실측 sigma (물리 단위) 계산.
 
     npz 의 actor_obs 는 obs_scales 가 곱해진 뒤의 값이라, 노이즈를 넣는 지점
     (스케일 이전)과 단위를 맞추려면 obs_scales 로 나눠야 한다.
+
+    아래 span 표는 current-step obs 8종을 사전순 concat 한 79차원 actor_obs
+    전용이다. actor_obs 에 history 를 직접 concat 하는 모델(예: cmd_cur baseline,
+    397차원)은 레이아웃이 달라 쓸 수 없으므로, ++sigma_npz= 로 79차원 모델의
+    obs_stats npz 를 지정해 sigma 를 공유한다 (물리 단위 오염 세기를 두 모델에
+    동일하게 주는 편이 비교에도 더 공정하다).
     """
     import numpy as np
 
-    path = Path(ckpt_dir) / "obs_stats" / "obs_ckpt_61000.npz"
-    assert path.exists(), (
-        f"{path} 가 없습니다. 먼저 collect_obs_stats.py 로 수집하세요.")
+    if npz_path is not None:
+        path = Path(npz_path)
+    else:
+        path = (Path(ckpt_dir) / "obs_stats" / f"obs_ckpt_{ckpt_num}.npz"
+                if ckpt_num is not None else None)
+        if path is None or not path.exists():
+            cand = sorted((Path(ckpt_dir) / "obs_stats").glob("obs_ckpt_*.npz"))
+            if cand:
+                path = cand[-1]
+    assert path is not None and path.exists(), (
+        f"obs_stats npz 가 없습니다 ({path}). collect_obs_stats.py 로 수집하거나 "
+        "++sigma_npz=<path> 로 지정하세요.")
     d = np.load(path)
     ok = (d["ep_len"] >= 20) & (~d["done"])
     o = d["actor_obs"][ok]
+    assert o.shape[-1] == 79, (
+        f"actor_obs 가 {o.shape[-1]}차원 — 아래 span 표는 79차원 레이아웃 전용입니다. "
+        "++sigma_npz= 로 79차원 모델의 obs_stats 를 지정하세요.")
     # actor_obs 는 obs 키 사전순 concat: actions23, base_ang_vel3, cmd_ang1,
     # cmd_lin2, cmd_stand1, dof_pos23, dof_vel23, proj_gravity3
     span = {"actions": (0, 23), "base_ang_vel": (23, 26), "command_ang_vel": (26, 27),
@@ -266,7 +284,9 @@ def main(override_config: OmegaConf):
     pre_process_config(config)
     device = config.get("device", None) or ("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    sigma = measured_sigma(checkpoint.parent, config.env.config.obs.obs_scales)
+    sigma = measured_sigma(checkpoint.parent, config.env.config.obs.obs_scales,
+                           ckpt_num=checkpoint.stem.split("_")[-1],
+                           npz_path=config.get("sigma_npz", None))
     logger.info("실측 sigma (물리 단위): " + ", ".join(f"{k}={v:.3f}" for k, v in sigma.items()))
 
     env = instantiate(config.env, device=device)

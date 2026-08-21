@@ -166,7 +166,9 @@ def main(override_config: OmegaConf):
     pre_process_config(config)
     device = config.get("device", None) or ("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    sigma = measured_sigma(checkpoint.parent, config.env.config.obs.obs_scales)
+    sigma = measured_sigma(checkpoint.parent, config.env.config.obs.obs_scales,
+                           ckpt_num=checkpoint.stem.split("_")[-1],
+                           npz_path=config.get("sigma_npz", None))
     logger.info("실측 sigma (물리 단위): " + ", ".join(f"{k}={v:.3f}" for k, v in sigma.items()))
 
     env = instantiate(config.env, device=device)
