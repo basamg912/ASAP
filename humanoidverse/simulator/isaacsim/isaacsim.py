@@ -273,13 +273,21 @@ class IsaacSim(BaseSimulator):
         #     ),
         # }
         asset_root = self.robot_config.asset.asset_root
-        asset_path = self.robot_config.asset.usd_file
+        # asset_path = self.robot_config.asset.usd_file
+        asset_path = self.robot_config.asset.urdf_file # use K1's urdf file
         # prapare to override the spawn configuration in HumanoidVerse/humanoidverse/simulator/isaacsim_articulation_cfg.py
         from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 
-        spawn = sim_utils.UsdFileCfg(
-            usd_path=os.path.join(asset_root, asset_path),
+        spawn = sim_utils.UrdfFileCfg(
+            asset_path=os.path.join(asset_root, asset_path),
             # usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/H1/h1.usd",
+            fix_base=False,
+            merge_fixed_joints=True,
+            joint_drive=sim_utils.UrdfConverterCfg.JointDriveCfg(
+                    gains=sim_utils.UrdfConverterCfg.JointDriveCfg.PDGainsCfg(
+                        stiffness=None, damping=None
+                    ),
+                ),
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
@@ -306,6 +314,36 @@ class IsaacSim(BaseSimulator):
                 ),
             ),
         )
+
+        # spawn = sim_utils.UsdFileCfg(
+        #     usd_path=os.path.join(asset_root, asset_path),
+        #     # usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/H1/h1.usd",
+        #     activate_contact_sensors=True,
+        #     rigid_props=sim_utils.RigidBodyPropertiesCfg(
+        #         disable_gravity=False,
+        #         retain_accelerations=False,
+        #         linear_damping=0.0,
+        #         angular_damping=0.0,
+        #         max_linear_velocity=1000.0,
+        #         max_angular_velocity=1000.0,
+        #         max_depenetration_velocity=1.0,
+        #     ),
+        #     articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+        #         enabled_self_collisions=not bool(
+        #             self.robot_config.asset.get("self_collisions", 1)
+        #         ),
+        #         solver_position_iteration_count=int(
+        #             self.robot_config.asset.get(
+        #                 "solver_position_iteration_count", 4
+        #             )
+        #         ),
+        #         solver_velocity_iteration_count=int(
+        #             self.robot_config.asset.get(
+        #                 "solver_velocity_iteration_count", 0
+        #             )
+        #         ),
+        #     ),
+        # )
 
         # prepare to override the articulation configuration in HumanoidVerse/humanoidverse/simulator/isaacsim_articulation_cfg.py
         default_joint_angles = copy.deepcopy(
