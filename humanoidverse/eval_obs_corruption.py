@@ -57,17 +57,62 @@ def build_conditions():
     return conds
 
 
-def measured_sigma(ckpt_dir, obs_scales, ckpt_num=None, npz_path=None):
+LEGACY_79_SPANS = {
+    "actions": (0, 23),
+    "base_ang_vel": (23, 26),
+    "command_ang_vel": (26, 27),
+    "command_lin_vel": (27, 29),
+    "command_stand": (29, 30),
+    "dof_pos": (30, 53),
+    "dof_vel": (53, 76),
+    "projected_gravity": (76, 79),
+}
+
+
+def actor_obs_spans(actor_obs_keys, obs_dims, obs_auxiliary=None):
+    """Reproduce actor_obs layout, expanding auxiliary history blocks."""
+    if hasattr(obs_dims, "items"):
+        dims = {str(k): int(v) for k, v in obs_dims.items()}
+    else:
+        dims = {str(k): int(v) for item in obs_dims for k, v in item.items()}
+    auxiliary = dict(obs_auxiliary or {})
+
+    spans = {}
+    offset = 0
+    for configured_key in sorted(str(k) for k in actor_obs_keys):
+        key = configured_key[:-4] if configured_key.endswith("_raw") else configured_key
+        if key in dims:
+            next_offset = offset + dims[key]
+            # Prefer a direct current-state component if the same signal also
+            # appears inside an auxiliary history block.
+            spans[key] = (offset, next_offset)
+        elif key in auxiliary:
+            next_offset = offset
+            for history_key, history_length in sorted(auxiliary[key].items()):
+                history_key = str(history_key)
+                if history_key not in dims:
+                    raise ValueError(
+                        f"auxiliary '{key}'의 항목 '{history_key}' 차원을 찾을 수 없습니다")
+                history_end = next_offset + dims[history_key] * int(history_length)
+                spans.setdefault(history_key, (next_offset, history_end))
+                next_offset = history_end
+        else:
+            raise ValueError(
+                f"actor_obs 항목 '{key}'의 dimension/auxiliary 구성을 찾을 수 없습니다")
+        offset = next_offset
+    return spans, offset
+
+
+def measured_sigma(ckpt_dir, obs_scales, ckpt_num=None, npz_path=None,
+                   actor_obs_keys=None, obs_dims=None, obs_auxiliary=None):
     """obs_stats npz 에서 obs 키별 실측 sigma (물리 단위) 계산.
 
     npz 의 actor_obs 는 obs_scales 가 곱해진 뒤의 값이라, 노이즈를 넣는 지점
     (스케일 이전)과 단위를 맞추려면 obs_scales 로 나눠야 한다.
 
-    아래 span 표는 current-step obs 8종을 사전순 concat 한 79차원 actor_obs
-    전용이다. actor_obs 에 history 를 직접 concat 하는 모델(예: cmd_cur baseline,
-    397차원)은 레이아웃이 달라 쓸 수 없으므로, ++sigma_npz= 로 79차원 모델의
-    obs_stats npz 를 지정해 sigma 를 공유한다 (물리 단위 오염 세기를 두 모델에
-    동일하게 주는 편이 비교에도 더 공정하다).
+    actor_obs span은 학습 config의 obs_dict/obs_dims/obs_auxiliary로부터 env와 같은
+    사전순 concat 규칙으로 계산한다. history를 직접 받는 baseline은 각 대상 신호의
+    전체 history block에서 sigma를 계산한다.
     """
     import numpy as np
 
@@ -86,14 +131,30 @@ def measured_sigma(ckpt_dir, obs_scales, ckpt_num=None, npz_path=None):
     d = np.load(path)
     ok = (d["ep_len"] >= 20) & (~d["done"])
     o = d["actor_obs"][ok]
-    assert o.shape[-1] == 79, (
-        f"actor_obs 가 {o.shape[-1]}차원 — 아래 span 표는 79차원 레이아웃 전용입니다. "
-        "++sigma_npz= 로 79차원 모델의 obs_stats 를 지정하세요.")
-    # actor_obs 는 obs 키 사전순 concat: actions23, base_ang_vel3, cmd_ang1,
-    # cmd_lin2, cmd_stand1, dof_pos23, dof_vel23, proj_gravity3
-    span = {"actions": (0, 23), "base_ang_vel": (23, 26), "command_ang_vel": (26, 27),
-            "command_lin_vel": (27, 29), "command_stand": (29, 30), "dof_pos": (30, 53),
-            "dof_vel": (53, 76), "projected_gravity": (76, 79)}
+    obs_width = o.shape[-1]
+    span = None
+    expected_width = None
+    if actor_obs_keys is not None and obs_dims is not None:
+        span, expected_width = actor_obs_spans(
+            actor_obs_keys, obs_dims, obs_auxiliary=obs_auxiliary)
+        if expected_width != obs_width:
+            span = None
+
+    # Backward compatibility for a 79-D sigma_npz shared by another policy.
+    if span is None and obs_width == 79:
+        span = LEGACY_79_SPANS
+        if expected_width is not None:
+            logger.warning(
+                f"sigma NPZ는 79차원, 평가 정책 actor_obs는 {expected_width}차원입니다. "
+                "79차원 encoder 모델의 canonical span을 사용합니다.")
+
+    assert span is not None, (
+        f"actor_obs가 {obs_width}차원이지만 config에서 계산한 layout은 "
+        f"{expected_width if expected_width is not None else '미지정'}차원입니다. "
+        "현재 checkpoint와 같은 obs config로 obs_stats를 다시 수집하거나, "
+        "++sigma_npz=<79차원 encoder 모델 NPZ>를 지정하세요.")
+    missing = [key for key in TARGETS if key not in span]
+    assert not missing, f"actor_obs에 corruption 대상 항목이 없습니다: {missing}"
     out = {}
     for k in TARGETS:
         a, b = span[k]
@@ -286,7 +347,10 @@ def main(override_config: OmegaConf):
 
     sigma = measured_sigma(checkpoint.parent, config.env.config.obs.obs_scales,
                            ckpt_num=checkpoint.stem.split("_")[-1],
-                           npz_path=config.get("sigma_npz", None))
+                           npz_path=config.get("sigma_npz", None),
+                           actor_obs_keys=config.env.config.obs.obs_dict.actor_obs,
+                           obs_dims=config.env.config.obs.obs_dims,
+                           obs_auxiliary=config.env.config.obs.obs_auxiliary)
     logger.info("실측 sigma (물리 단위): " + ", ".join(f"{k}={v:.3f}" for k, v in sigma.items()))
 
     env = instantiate(config.env, device=device)

@@ -1,18 +1,16 @@
 '''
-History Encoder V4 = V2 구조에서 teacher 의 VAE recon 을 제거하고, teacher latent 을
-critic 경로로 학습시키는 버전.
+History Encoder V4 = privileged teacher를 task critic으로 학습하고 history student를
+policy + velocity + contrastive loss로 학습시키는 버전.
 
   - Student (배포 사용): [history] -> MLP-mixer -> [v_base(3), latent z_s]   (v2 와 동일)
   - Teacher phi (학습 전용): [teacher_obs] -> MLP -> z                       (encoding only)
       decoder / logvar / recon / KL 없음. privileged obs 를 latent 로 encoding 하는 일만 한다.
-      같은 phi 를 두 시점에 쓴다:
-        phi(teacher_obs_t)     -> main critic 입력에 concat  (teacher_mode="critic")
-        phi(teacher_obs_{t+1}) -> student 타깃 (detach)
+      phi(teacher_obs_t) -> main critic 입력에 concat (teacher_mode="critic")
   - Loss:
       critic  : value_loss_coef * PPO value loss   (gradient 가 phi 까지 전파 -> phi 학습)
-      student : vel_coef * MSE(v_hat, GT base_lin_vel)
-              + latent_coef * MSE(z_s, phi(teacher_obs_{t+1}).detach())
-      policy  : PPO (detach_encoder_for_policy=True 면 encoder 로 PPO gradient 차단)
+      student : PPO policy loss + vel_coef * MSE(v_hat, GT base_lin_vel)
+              + contrastive_coef * InfoNCE(h(z_s), g(phi(teacher_obs_t).detach()))
+      teacher : encoder는 value loss만, projection head는 contrastive loss만 받는다.
 
 teacher_mode (teacher 학습 신호 선택; student/latent 구조는 4개 모드 모두 동일):
   critic     (기본) phi(teacher_obs_t) 를 main critic 입력에 붙여 value loss 로 학습.
@@ -34,8 +32,8 @@ teacher_obs 는 critic_obs 에 없는 privileged 항목(base_pos_z, feet_contact
 v1/v2/v3 (agents/ppo_hist*, modules/ppo_hist*_modules.py) 는 수정하지 않는다 (additive).
 타이밍 정렬/스토리지/rollout 은 v2 를 그대로 상속한다:
   base_vel_target : env.step "이전" base_lin_vel (s_t)
-  next_obs_target : env.step "이후" obs[recon_target_key] (o_{t+1}). v4 는
-                    recon_target_key = teacher_obs 로 두어 이 슬롯을 teacher 입력 t+1 로 쓴다.
+  next_obs_target : v2 상속 storage가 보존하는 o_{t+1}. 현재 critic+contrastive 경로에서는
+                    사용하지 않고, vicreg/critic_aux legacy 모드에서만 teacher 입력으로 쓴다.
 
 Launch: +exp=locomotion_hist_v4 +obs=loco/leggedloco_obs_history_encoder_v4
 '''
@@ -51,8 +49,12 @@ from humanoidverse.agents.ppo.ppo import PPO
 from humanoidverse.agents.modules.ppo_modules import PPOCritic
 from humanoidverse.agents.modules.ppo_hist_modules import recon_loss_masked
 from humanoidverse.agents.modules.ppo_hist_v2_modules import PPOActorWithStudentEncoder
+from humanoidverse.agents.modules.ppo_hist_v3_modules import (
+    PPOActorWithStudentEncoderContrastive, info_nce_loss,
+)
 from humanoidverse.agents.modules.ppo_hist_v4_modules import (
-    TeacherEncoder, TeacherValueHead, vicreg_var_loss, vicreg_cov_loss,
+    TeacherEncoder, TeacherEncoderContrastive, TeacherValueHead,
+    vicreg_var_loss, vicreg_cov_loss,
 )
 from humanoidverse.agents.ppo_hist_v2.ppo_hist_v2 import PPOHistV2
 
@@ -78,6 +80,19 @@ class PPOHistV4(PPOHistV2):
         # critic 모드만 main critic 입력에 latent 를 붙인다 (phi 는 critic loss 로 학습)
         self.teacher_in_critic = (self.teacher_mode == 'critic')
 
+        # Saved V4 configs before this variant do not have this key. They keep
+        # the original actor/teacher module shapes and remain loadable.
+        self.use_contrastive = bool(self.config.get('use_contrastive', False))
+        self.contrastive_coef = float(self.config.get('contrastive_coef', 0.0))
+        self.contrastive_temperature = float(
+            self.config.get('contrastive_temperature', 0.1))
+        self.contrastive_batch_size = int(
+            self.config.get('contrastive_batch_size', 1024))
+        if self.use_contrastive and not self.teacher_in_critic:
+            raise ValueError(
+                "V4 contrastive path requires teacher_mode=critic so the teacher "
+                "encoder is anchored only by the task value loss")
+
         # phi 입력 그룹. 미지정이면 v2 상속 이름(recon_target_key)을 그대로 쓴다.
         self.teacher_obs_key = str(self.config.get('teacher_obs_key', self.recon_target_key))
         assert self.teacher_obs_key in self.algo_obs_dim_dict, (
@@ -85,8 +100,9 @@ class PPOHistV4(PPOHistV2):
             "+obs=loco/leggedloco_obs_history_encoder_v4 로 실행해야 한다 "
             f"(available: {sorted(self.algo_obs_dim_dict.keys())})")
         assert self.teacher_obs_key == self.recon_target_key, (
-            "v2 rollout 은 recon_target_key 그룹의 t+1 값을 next_obs_target 으로 캡처한다. "
-            "student 타깃이 phi(teacher_obs_{t+1}) 이어야 하므로 두 키가 같아야 한다 "
+            "v2 상속 rollout 은 recon_target_key 그룹의 t+1 값을 next_obs_target 으로 "
+            "캡처한다. critic 모드에서는 이 슬롯을 사용하지 않지만 legacy teacher 모드와 "
+            "공통 observation 계약을 유지하려면 두 키가 같아야 한다 "
             f"(teacher_obs_key={self.teacher_obs_key}, recon_target_key={self.recon_target_key})")
 
         tcfg = self.config.teacher_config
@@ -104,11 +120,22 @@ class PPOHistV4(PPOHistV2):
         loss_dict['teacher_var'] = 0
         loss_dict['teacher_cov'] = 0
         loss_dict['teacher_value'] = 0   # critic_aux 모드: V_aux 의 return 회귀 MSE
+        loss_dict['contrastive'] = 0
         return loss_dict
 
     # ---- models: actor 는 v2 student, teacher 는 결정론적 encoder ----
     def _setup_models_and_optimizer(self):
-        self.actor = PPOActorWithStudentEncoder(
+        actor_cls = (PPOActorWithStudentEncoderContrastive
+                     if self.use_contrastive else PPOActorWithStudentEncoder)
+        actor_kwargs = {}
+        if self.use_contrastive:
+            proj = self.config.projection_config
+            actor_kwargs = {
+                'proj_dim': int(proj.proj_dim),
+                'proj_hidden_dims': tuple(proj.hidden_dims),
+                'proj_activation': proj.activation,
+            }
+        self.actor = actor_cls(
             obs_dim_dict=self.algo_obs_dim_dict,
             module_config_dict=self.config.module_dict.actor,
             num_actions=self.num_act,
@@ -118,6 +145,7 @@ class PPOHistV4(PPOHistV2):
             vel_dim=self.vel_dim,
             encoder_struct=self.encoder_struct,
             detach_encoder_output=bool(self.config.get('detach_encoder_for_policy', True)),
+            **actor_kwargs,
         ).to(self.device)
         # critic 모드: main critic 입력 = cat[critic_obs, z]. yaml 에 숫자를 중복 적어
         # latent_dim 과 어긋나는 footgun 을 피하려고 여기서 append 한다.
@@ -132,12 +160,23 @@ class PPOHistV4(PPOHistV2):
         self.critic = PPOCritic(self.algo_obs_dim_dict, critic_module_config).to(self.device)
 
         tcfg = self.config.teacher_config
-        self.teacher = TeacherEncoder(
+        teacher_cls = (TeacherEncoderContrastive
+                       if self.use_contrastive else TeacherEncoder)
+        teacher_kwargs = {}
+        if self.use_contrastive:
+            proj = self.config.projection_config
+            teacher_kwargs = {
+                'proj_dim': int(proj.proj_dim),
+                'proj_hidden_dims': tuple(proj.hidden_dims),
+                'proj_activation': proj.activation,
+            }
+        self.teacher = teacher_cls(
             obs_dim=self.algo_obs_dim_dict[self.teacher_obs_key],
             latent_dim=self.latent_dim,
             hidden_dims=tuple(tcfg.enc_hidden_dims),
             activation=tcfg.activation,
             output_norm=bool(tcfg.get('output_norm', True)),
+            **teacher_kwargs,
         ).to(self.device)
 
         # critic_aux 모드 전용: 학습 전용 aux value head (main critic 은 무수정 -> GAE 불변)
@@ -165,7 +204,8 @@ class PPOHistV4(PPOHistV2):
             self.teacher_optimizer = None
         logger.info(f"[hist_v4] teacher_mode={self.teacher_mode} "
                     f"(trainable={self.teacher_trainable}, "
-                    f"teacher_obs={self.teacher_obs_key})")
+                    f"teacher_obs={self.teacher_obs_key}, "
+                    f"contrastive={self.use_contrastive})")
 
     # ---- critic: critic 모드에서만 입력에 phi(teacher_obs_t) 를 붙인다 ----
     # rollout 에서는 inference_mode 라 그래프가 없고, update 에서 재평가될 때 그래프가 생겨
@@ -189,6 +229,23 @@ class PPOHistV4(PPOHistV2):
             z_last = self.teacher(last_obs_dict[self.teacher_obs_key])
         patched["critic_obs"] = torch.cat([last_obs_dict["critic_obs"], z_last], dim=-1)
         return super()._compute_returns(patched, policy_state_dict)
+
+    def _contrastive_loss(self, z_student, z_teacher):
+        """Align the student to a stop-gradient, same-step teacher target."""
+        if not self.use_contrastive:
+            return torch.zeros((), device=z_student.device)
+        batch_size = z_student.shape[0]
+        if batch_size < 2:
+            return torch.zeros((), device=z_student.device)
+        if batch_size > self.contrastive_batch_size:
+            idx = torch.randperm(batch_size, device=z_student.device)[
+                :self.contrastive_batch_size]
+            z_student = z_student[idx]
+            z_teacher = z_teacher[idx]
+        p_student = self.actor.project_student_latent(z_student)
+        p_teacher = self.teacher.project_teacher_latent(z_teacher.detach())
+        return info_nce_loss(
+            p_student, p_teacher, self.contrastive_temperature)
 
     # ---- update: v2 의 _update_ppo 복제 + teacher VAE 블록을 latent encoder 로 교체 ----
     def _update_ppo(self, policy_state_dict, loss_dict):
@@ -242,7 +299,8 @@ class PPOHistV4(PPOHistV2):
 
         entropy_loss = entropy_batch.mean()
 
-        # ---- teacher 타깃: z_next = phi(teacher_obs_{t+1}) (encoding only, recon/KL 없음) ----
+        # Non-critic legacy modes still use t+1 targets. In critic mode the
+        # student target is the same-step task latent already computed above.
         target_next = policy_state_dict['next_obs_target']
         valid_mask = (~policy_state_dict['dones'].bool()).float()
         student = self.actor.get_student_outputs()
@@ -251,9 +309,11 @@ class PPOHistV4(PPOHistV2):
         need_grad_on_next = self.teacher_mode in ('vicreg', 'critic_aux')
         if need_grad_on_next:
             z_next = self.teacher(target_next)
-        else:
+        elif not self.teacher_in_critic:
             with torch.no_grad():
                 z_next = self.teacher(target_next)
+        else:
+            z_next = None
 
         # ---- teacher 학습 (critic 모드는 critic_loss.backward() 로 학습되므로 여기서 제외) ----
         t_var = torch.zeros((), device=self.device)
@@ -282,16 +342,32 @@ class PPOHistV4(PPOHistV2):
                 self.max_grad_norm)
             self.teacher_optimizer.step()
 
-        # ---- student supervised (타깃 z_next 는 항상 detach — student -> teacher 역류 금지) ----
+        # critic mode uses phi(teacher_obs_t): both critic and student targets
+        # are aligned to the current transition state, and terminal samples are
+        # valid. Other legacy modes retain their t+1 target and done mask.
+        if self.teacher_in_critic:
+            student_target = self._last_critic_latent
+            student_mask = torch.ones_like(valid_mask)
+        else:
+            student_target = z_next
+            student_mask = valid_mask
+
         vel_loss = (student['v'] - policy_state_dict['base_vel_target']).pow(2).mean()
-        latent_loss = recon_loss_masked(student['z'], z_next.detach(), valid_mask)
+        latent_loss = recon_loss_masked(
+            student['z'], student_target.detach(), student_mask)
+        contrastive_loss = self._contrastive_loss(
+            student['z'], student_target)
         latent_coef = self.latent_coef
+        contrastive_coef = self.contrastive_coef
         if self.latent_coef_warmup_iters > 0:
-            latent_coef *= min(1.0, self.current_learning_iteration
-                               / self.latent_coef_warmup_iters)
+            warm = min(1.0, self.current_learning_iteration
+                       / self.latent_coef_warmup_iters)
+            latent_coef *= warm
+            contrastive_coef *= warm
 
         actor_loss = (surrogate_loss - self.entropy_coef * entropy_loss
-                      + self.vel_coef * vel_loss + latent_coef * latent_loss)
+                      + self.vel_coef * vel_loss + latent_coef * latent_loss
+                      + contrastive_coef * contrastive_loss)
         critic_loss = self.value_loss_coef * value_loss
 
         self.actor_optimizer.zero_grad()
@@ -313,11 +389,12 @@ class PPOHistV4(PPOHistV2):
         loss_dict['Entropy'] += entropy_loss.item()
         loss_dict['vel_est'] += vel_loss.item()
         loss_dict['latent_match'] += latent_loss.item()
+        loss_dict['contrastive'] += contrastive_loss.item()
         loss_dict['teacher_var'] += t_var.item()
         loss_dict['teacher_cov'] += t_cov.item()
         loss_dict['teacher_value'] += t_value.item()
         # 붕괴 진단: 차원별 std 의 평균 (0 에 붙으면 latent 이 상수로 붕괴)
-        loss_dict['teacher_latent_std'] += z_next.std(dim=0).mean().item()
+        loss_dict['teacher_latent_std'] += student_target.std(dim=0).mean().item()
         return loss_dict
 
     # ---- checkpoint: frozen 모드도 teacher 가중치 저장 필수 (랜덤 초기값이 곧 타깃 함수) ----

@@ -45,10 +45,13 @@ class _StubEnv:
     num_envs = 4
 
 
-def make_algo(teacher_mode):
+def make_algo(teacher_mode, use_contrastive=None):
     cfg = copy.deepcopy(
         OmegaConf.load("humanoidverse/config/algo/ppo_hist_v4.yaml").algo.config)
     cfg.teacher_mode = teacher_mode
+    if use_contrastive is None:
+        use_contrastive = teacher_mode == "critic"
+    cfg.use_contrastive = use_contrastive
     cfg.module_dict.actor.input_dim = ["actor_obs", cfg.vel_dim + cfg.latent_dim]
     cfg.module_dict.actor.layer_config.hidden_dims = [32]
     cfg.module_dict.critic.layer_config.hidden_dims = [32]
@@ -91,6 +94,17 @@ def first_linear_in_features(module):
     return [m for m in module.modules() if isinstance(m, torch.nn.Linear)][0].in_features
 
 
+@pytest.mark.parametrize("name", [
+    "leggedloco_obs_history_encoder_v4.yaml",
+    "leggedloco_obs_history_encoder_v4_wphase.yaml",
+])
+def test_v4_critic_observation_has_no_history(name):
+    cfg = OmegaConf.load(f"humanoidverse/config/obs/loco/{name}").obs
+    assert "short_history" not in cfg.obs_dict.critic_obs
+    assert "short_history" not in cfg.obs_auxiliary
+    assert "history" in cfg.obs_auxiliary
+
+
 def test_invalid_teacher_mode_rejected():
     with pytest.raises(AssertionError, match="teacher_mode"):
         make_algo("bogus")
@@ -130,6 +144,43 @@ def test_critic_mode_value_loss_trains_teacher():
                for k, v in algo.teacher.state_dict().items())
 
 
+def test_critic_value_gradient_trains_encoder_not_projection_head():
+    """Task value is the only critic-side signal into the teacher encoder."""
+    algo = make_algo("critic")
+    batch = fake_batch()
+    algo.teacher.zero_grad()
+    algo.critic.zero_grad()
+    algo._critic_eval_step(batch).square().mean().backward()
+    encoder_grad = next(algo.teacher.net.parameters()).grad
+    assert encoder_grad is not None and encoder_grad.abs().sum() > 0
+    assert all(p.grad is None for p in algo.teacher.projection_head.parameters())
+
+
+def test_contrastive_trains_student_and_heads_but_stops_teacher_encoder():
+    algo = make_algo("critic")
+    algo.actor.zero_grad()
+    algo.teacher.zero_grad()
+    z_student = torch.randn(64, algo.latent_dim, requires_grad=True)
+    z_teacher = algo.teacher(torch.randn(64, TEACHER_OBS))
+    algo._contrastive_loss(z_student, z_teacher).backward()
+
+    assert z_student.grad is not None and z_student.grad.abs().sum() > 0
+    assert all(p.grad is None for p in algo.teacher.net.parameters())
+    teacher_head_grad = next(algo.teacher.projection_head.parameters()).grad
+    student_head_grad = next(algo.actor.contrastive_head.parameters()).grad
+    assert teacher_head_grad is not None and teacher_head_grad.abs().sum() > 0
+    assert student_head_grad is not None and student_head_grad.abs().sum() > 0
+
+
+def test_policy_gradient_reaches_student_encoder():
+    algo = make_algo("critic")
+    algo.actor.zero_grad()
+    algo.actor.act(torch.randn(32, ACTOR_OBS), torch.randn(32, ENCODER_OBS))
+    algo.actor.action_mean.square().mean().backward()
+    grad = next(algo.actor.student.parameters()).grad
+    assert grad is not None and grad.abs().sum() > 0
+
+
 def test_critic_eval_step_ignores_future_obs():
     """critic 은 phi(teacher_obs_t) 만 본다 — next_obs_target 이 NaN 이어도 value 는 유한."""
     algo = make_algo("critic")
@@ -138,6 +189,15 @@ def test_critic_eval_step_ignores_future_obs():
     value = algo._critic_eval_step(batch)
     assert value.shape == (64, 1)
     assert torch.isfinite(value).all()
+
+
+def test_critic_contrastive_update_uses_same_step_teacher_target():
+    algo = make_algo("critic")
+    batch = fake_batch()
+    batch["next_obs_target"] = torch.full_like(
+        batch["next_obs_target"], float("nan"))
+    losses = algo._update_ppo(batch, algo._init_loss_dict_at_training_step())
+    assert all(torch.isfinite(torch.tensor(value)) for value in losses.values())
 
 
 def test_critic_mode_bootstrap_value_path_matches_critic_input():

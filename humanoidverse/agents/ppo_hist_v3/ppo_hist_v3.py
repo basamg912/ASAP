@@ -4,20 +4,28 @@ History Encoder V3 = V2(student-teacher) + contrastive projection heads.
   1. h(z_s): student latent 용 헤드 (actor 소유 -> actor_optimizer)
   2. g(z_t): teacher latent 용 헤드 (teacher 소유 -> teacher_optimizer)
   3. contrastive loss = 양방향 InfoNCE(h(z_s), g(t_mu.detach()))
-     - teacher encoder 는 여전히 recon+KL 로만 학습 (detach)
+     - contrastive 경로에서는 teacher encoder 를 detach
      - h, g, student 가 contrastive gradient 를 받음
      - 대형 미니배치에서는 유효(non-done) 샘플 중 contrastive_batch_size 개만 서브샘플
-  4. v2 는 무수정 유지 — 이 클래스는 PPOHistV2 상속 (additive)
-  5. reconstruction 은 z_t 사용 유지 (TeacherVAE.forward 그대로)
-  6. policy 입력은 z_s 유지 (v2 actor 경로 그대로)
+  4. teacher_in_critic=True 이면 V4 critic mode 와 동일하게
+     cat[critic_obs_t, teacher_mu(recon_target_t)] -> value
+     - value loss gradient 가 teacher encoder 로 흐름
+     - decoder/projection head 는 이 경로에 포함되지 않음
+  5. v2 는 무수정 유지 — 이 클래스는 PPOHistV2 상속 (additive)
+  6. reconstruction 은 z_t 사용 유지 (TeacherVAE.forward 그대로)
+  7. policy 입력은 z_s 유지 (v2 actor 경로 그대로)
 
 기본값: latent_coef=0 (v2 의 MSE latent match 를 contrastive 로 대체; yaml 에서 병행 가능)
 
 Launch: +exp=locomotion_hist_v3 +obs=loco/leggedloco_obs_history_encoder
 '''
+import copy
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from loguru import logger
+from omegaconf import open_dict
 
 from humanoidverse.agents.modules.ppo_modules import PPOCritic
 from humanoidverse.agents.modules.ppo_hist_modules import vae_kl_loss, recon_loss_masked
@@ -35,6 +43,9 @@ class PPOHistV3(PPOHistV2):
         self.contrastive_coef = self.config.contrastive_coef
         self.contrastive_temperature = float(self.config.get('contrastive_temperature', 0.1))
         self.contrastive_batch_size = int(self.config.get('contrastive_batch_size', 1024))
+        # Archived V3 configs do not contain this key. Keep them loadable with
+        # the original critic shape while enabling the path in the current yaml.
+        self.teacher_in_critic = bool(self.config.get('teacher_in_critic', False))
 
     def _init_loss_dict_at_training_step(self):
         loss_dict = super()._init_loss_dict_at_training_step()
@@ -57,8 +68,16 @@ class PPOHistV3(PPOHistV2):
             proj_hidden_dims=tuple(proj.hidden_dims),
             proj_activation=proj.activation,
         ).to(self.device)
+        critic_module_config = self.config.module_dict.critic
+        if self.teacher_in_critic:
+            critic_module_config = copy.deepcopy(critic_module_config)
+            with open_dict(critic_module_config):
+                critic_module_config.input_dim = (list(critic_module_config.input_dim)
+                                                  + [self.latent_dim])
+            logger.info(f"[hist_v3] critic input_dim -> {list(critic_module_config.input_dim)} "
+                        "(teacher mu concat)")
         self.critic = PPOCritic(self.algo_obs_dim_dict,
-                                self.config.module_dict.critic).to(self.device)
+                                critic_module_config).to(self.device)
         self.teacher = TeacherVAEContrastive(
             obs_dim=self.algo_obs_dim_dict[self.recon_target_key],
             latent_dim=self.latent_dim,
@@ -73,6 +92,25 @@ class PPOHistV3(PPOHistV2):
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=self.critic_learning_rate)
         self.teacher_optimizer = optim.Adam(
             self.teacher.parameters(), lr=float(self.config.teacher_config.learning_rate))
+
+    def _critic_eval_step(self, obs_dict):
+        """Evaluate V(s_t) with the deterministic current teacher mean."""
+        if not self.teacher_in_critic:
+            return super()._critic_eval_step(obs_dict)
+        t_mu_now, _ = self.teacher.encode(obs_dict[self.recon_target_key])
+        return self.critic.evaluate(
+            torch.cat([obs_dict["critic_obs"], t_mu_now], dim=-1))
+
+    def _compute_returns(self, last_obs_dict, policy_state_dict):
+        """Append teacher mu to the final bootstrap observation as well."""
+        if not self.teacher_in_critic:
+            return super()._compute_returns(last_obs_dict, policy_state_dict)
+        patched = dict(last_obs_dict)
+        with torch.no_grad():
+            t_mu_last, _ = self.teacher.encode(last_obs_dict[self.recon_target_key])
+        patched["critic_obs"] = torch.cat(
+            [last_obs_dict["critic_obs"], t_mu_last], dim=-1)
+        return super()._compute_returns(patched, policy_state_dict)
 
     def _contrastive_loss(self, z_s, t_mu, valid_mask):
         """유효(non-done) 샘플 서브샘플 위에서 InfoNCE(h(z_s), g(t_mu.detach()))."""
@@ -164,8 +202,8 @@ class PPOHistV3(PPOHistV2):
                       + contrastive_coef * contrastive_loss)
         critic_loss = self.value_loss_coef * value_loss
 
-        # g(teacher 소유)가 actor_loss 에서 gradient 를 받으므로,
-        # 두 backward 를 모두 끝낸 뒤 teacher step (v2 와 순서 다름)
+        # teacher gradient는 recon/KL, projection head의 contrastive, 그리고
+        # teacher_in_critic일 때 current-state encoder의 value loss에서 합산된다.
         self.actor_optimizer.zero_grad()
         self.critic_optimizer.zero_grad()
         self.teacher_optimizer.zero_grad()

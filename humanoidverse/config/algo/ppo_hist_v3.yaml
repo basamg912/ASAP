@@ -39,6 +39,9 @@ algo:
     vae_free_bits: 0.1
     encoder_obs_key: encoder_obs
     recon_target_key: recon_target
+    # V4 critic mode만 적용: 현재 teacher VAE의 mu(recon_target_t)를 critic에 concat하고
+    # value loss gradient를 teacher encoder로 보낸다. decoder와 policy 경로는 V3 그대로다.
+    teacher_in_critic: False
     encoder_config:
       input_key: encoder_obs
       hidden_dims: [256, 128]     # feature mixing (per-step 75차원) hidden

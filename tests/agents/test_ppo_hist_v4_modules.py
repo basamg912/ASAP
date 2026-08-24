@@ -1,7 +1,8 @@
 import torch
 
 from humanoidverse.agents.modules.ppo_hist_v4_modules import (
-    TeacherEncoder, TeacherValueHead, vicreg_var_loss, vicreg_cov_loss,
+    TeacherEncoder, TeacherEncoderContrastive, TeacherValueHead,
+    vicreg_var_loss, vicreg_cov_loss,
 )
 
 
@@ -41,6 +42,15 @@ def test_teacher_output_norm_off_is_raw_mlp():
     enc = TeacherEncoder(obs_dim=68, latent_dim=16, output_norm=False)
     obs = torch.randn(4, 68)
     assert torch.allclose(enc(obs), enc.net(obs))
+
+
+def test_contrastive_teacher_encoder_has_projection_head():
+    enc = TeacherEncoderContrastive(
+        obs_dim=68, latent_dim=16, proj_dim=12, proj_hidden_dims=[24])
+    z = enc(torch.randn(7, 68))
+    projected = enc.project_teacher_latent(z)
+    assert z.shape == (7, 16)
+    assert projected.shape == (7, 12)
 
 
 def test_frozen_teacher_gets_no_gradient_from_student_loss():

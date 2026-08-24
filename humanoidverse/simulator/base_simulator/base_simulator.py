@@ -116,6 +116,10 @@ class BaseSimulator:
         """
         raise NotImplementedError("The 'refresh_sim_tensors' method must be implemented in subclasses.")
 
+    def reset_transient_state(self, env_ids):
+        """Clear simulator state that must not survive an episode reset."""
+        return
+
     # ----- Control Application Methods -----
 
     def apply_torques_at_dof(self, torques):

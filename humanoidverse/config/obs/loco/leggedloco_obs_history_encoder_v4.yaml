@@ -15,8 +15,8 @@
 #   (base_lin_vel 은 critic_obs 에 이미 있어 그 자체로는 정보 이득이 없지만,
 #    student 가 history 로 추정해야 하는 핵심량이라 타깃 latent 에는 포함한다.)
 #
-#   student 타깃은 같은 phi 로 phi(teacher_obs_{t+1}) — 즉 "한 스텝 뒤 privileged 상태"를
-#   value 관련 축으로 압축한 값이다.
+#   critic은 current state만 직접 받고, history는 student encoder에만 전달한다.
+#   student는 같은 시점 phi(teacher_obs_t)를 stop-gradient contrastive target으로 사용한다.
 #
 # privileged 항목은 학습 전용 경로(teacher/critic)에만 들어가므로 noise 를 주지 않는다.
 # actor_obs / encoder_obs(history) 는 원본과 동일 — 배포 입력은 바뀌지 않는다.
@@ -41,14 +41,12 @@ obs:
       command_stand,
       dof_pos,
       dof_vel,
-      actions,
-      short_history
+      actions
     ]
     # parse_observation 에서 `get_obs_history()` 함수 실행
     # obs_dict[encoder_obs] 가 obs_auxiliary 의 history 로 채워짐
     encoder_obs: [ history ]
-    # teacher encoder phi 의 입력. t 시점 값은 critic 입력용, t+1 시점 값은 student 타깃용
-    # (rollout 에서 env.step 이후 next_obs_target 으로 캡처됨)
+    # teacher encoder phi의 현재 시점 privileged 입력. critic과 student target이 공유한다.
     teacher_obs: [
       base_lin_vel,
       base_pos_z,
@@ -69,17 +67,6 @@ obs:
       dof_vel: 4,
       actions: 4,
     }
-    short_history: {
-      base_ang_vel: 5,
-      projected_gravity: 5,
-      dof_pos: 5,
-      dof_vel: 5,
-      actions: 5,
-      command_lin_vel: 5,
-      command_ang_vel: 5,
-      command_stand: 5,
-    }
-
   history_start_offsets: {history: 1}
   history_include_current: True
   history_fill_on_reset: True
@@ -96,7 +83,6 @@ obs:
     dof_vel: 0.05,
     actions: 1.0,
     history: 1.0,
-    short_history: 1.0,
     base_pos_z: 1.0,          # 약 0.8 m -> 스케일 그대로
     feet_contact_force: 0.01, # 접촉력 O(100N) -> O(1) 로
   }
@@ -118,7 +104,6 @@ obs:
     dof_vel: {n_min: -1.5, n_max: 1.5},
     actions: 0.0,
     history: 0.0,
-    short_history: 0.0,
     base_pos_z: 0.0,          # privileged: 학습 전용 경로라 noise 없음
     feet_contact_force: 0.0,
   }

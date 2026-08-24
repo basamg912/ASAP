@@ -168,7 +168,10 @@ def main(override_config: OmegaConf):
 
     sigma = measured_sigma(checkpoint.parent, config.env.config.obs.obs_scales,
                            ckpt_num=checkpoint.stem.split("_")[-1],
-                           npz_path=config.get("sigma_npz", None))
+                           npz_path=config.get("sigma_npz", None),
+                           actor_obs_keys=config.env.config.obs.obs_dict.actor_obs,
+                           obs_dims=config.env.config.obs.obs_dims,
+                           obs_auxiliary=config.env.config.obs.obs_auxiliary)
     logger.info("실측 sigma (물리 단위): " + ", ".join(f"{k}={v:.3f}" for k, v in sigma.items()))
 
     env = instantiate(config.env, device=device)

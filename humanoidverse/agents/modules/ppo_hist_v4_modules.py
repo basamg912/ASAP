@@ -5,8 +5,9 @@ History Encoder V4: teacher 를 "privileged obs 의 latent encoding" 만 담당�
   Teacher phi(학습전용):[teacher_obs] --MLP-->        z                 (결정론적 encoding only)
                        decoder / logvar / recon / KL 전부 없음 — v2·v3 의 TeacherVAE 대체.
 
-  z 는 생성(recon) 목적이 아니라 정렬 타깃으로만 쓰인다:
-      student : latent_coef * MSE(z_s, phi(teacher_obs_{t+1}).detach())
+  critic mode의 z 는 task value와 student 정렬에 함께 쓰인다:
+      critic  : V(critic_obs_t, phi(teacher_obs_t))
+      student : InfoNCE(h(z_s(history_t)), g(phi(teacher_obs_t).detach()))
 
   teacher 를 무엇으로 학습시키는가가 유일한 설계 선택 (붕괴 방지 때문):
     teacher_mode="critic" (기본) phi(teacher_obs_t) 를 main critic 입력에 붙이고, critic 의
@@ -42,8 +43,8 @@ from .ppo_hist_modules import MLP
 class TeacherEncoder(nn.Module):
     """phi: [teacher_obs] -> MLP -> z. 결정론적이며 decoder/분포 파라미터가 없다.
 
-    같은 phi 를 두 시점에 쓴다: phi(teacher_obs_t) 는 critic 입력, phi(teacher_obs_{t+1}) 은
-    student 타깃. 그래서 입력 그룹 하나로 "value 에 유용한 privileged 상태 인코더" 가 된다.
+    critic+contrastive 모드에서는 같은 phi(teacher_obs_t)를 critic 입력과 student 타깃으로
+    사용한다. legacy vicreg/critic_aux 모드만 phi(teacher_obs_{t+1})를 사용한다.
 
     output_norm=True 면 latent 차원에 대해 (affine 없는) LayerNorm 을 걸어 z 의
     per-sample 평균/스케일을 고정한다. frozen 모드에서 랜덤 초기화된 net 의 출력
@@ -65,6 +66,24 @@ class TeacherEncoder(nn.Module):
     def encode(self, obs):
         """v2 TeacherVAE.encode 와 이름을 맞춘 별칭 (여기서는 mu/logvar 가 없다)."""
         return self.forward(obs)
+
+
+class TeacherEncoderContrastive(TeacherEncoder):
+    """Task-trained privileged encoder with a contrastive projection head.
+
+    The encoder output is detached before this head is used, so InfoNCE trains
+    the projection head while the privileged representation itself is learned
+    only through the critic value objective.
+    """
+
+    def __init__(self, *args, proj_dim=16, proj_hidden_dims=(32,),
+                 proj_activation="ELU", **kwargs):
+        super().__init__(*args, **kwargs)
+        self.projection_head = MLP(
+            self.latent_dim, proj_dim, list(proj_hidden_dims), proj_activation)
+
+    def project_teacher_latent(self, z):
+        return self.projection_head(z)
 
 
 class TeacherValueHead(nn.Module):

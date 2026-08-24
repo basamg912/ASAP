@@ -1,5 +1,6 @@
 import os
 import time
+from contextlib import nullcontext
 
 import mujoco as mj
 import numpy as np
@@ -236,6 +237,25 @@ class MuJoCo(BaseSimulator):
         # cfrc_ext: [torque(3), force(3)] — force 성분만 사용 (world 방향, com 기준)
         cf = d.cfrc_ext[self._body_ids][:, 3:6].astype(np.float32)
         self.contact_forces.copy_(torch.from_numpy(cf).unsqueeze(0))
+
+    def reset_transient_state(self, env_ids):
+        """Cancel forces and solver state left by the previous episode."""
+        del env_ids  # MuJoCo backend supports one environment only.
+
+        lock = self.viewer.lock() if self.viewer is not None else nullcontext()
+        with lock:
+            self.data.xfrc_applied[:] = 0.0
+            self.data.qfrc_applied[:] = 0.0
+            self.data.qacc[:] = 0.0
+            self.data.qacc_warmstart[:] = 0.0
+            self.data.ctrl[:] = 0.0
+            self.data.act[:] = 0.0
+
+            # A viewer mouse perturbation otherwise keeps pulling the newly
+            # reset body toward the previous episode's drag target.
+            if self.viewer is not None:
+                self.viewer.perturb.active = 0
+                self.viewer.perturb.select = 0
 
     # ----- Control Application Methods -----
 

@@ -425,6 +425,7 @@ class LeggedRobotBase(BaseTask):
         if len(env_ids) == 0:
             return
         self.need_to_refresh_envs[env_ids] = True
+        self.simulator.reset_transient_state(env_ids)
         self._reset_buffers_callback(env_ids, target_buf)
         self._reset_tasks_callback(env_ids)        # if target_states is not None, reset to target states
         self._reset_robot_states_callback(env_ids, target_states)

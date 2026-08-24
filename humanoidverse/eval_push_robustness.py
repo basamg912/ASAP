@@ -21,9 +21,9 @@ push_by_setting_velocity 방식의 '더하기').
     (회복 궤적 시각화용).
 
 사용 예:
-  python humanoidverse/eval_push_robustness.py \
-    +checkpoint=ckpt/hist_ablation/cur/baseline/model_10000.pt +simulator=isaacsim \
-    ++headless=True ++vx=0.5 ++envs_per_cond=20
+python humanoidverse/eval_push_robustness.py \
++checkpoint=ckpt/hist_ablation/cur/baseline/model_10000.pt +simulator=isaacsim \
+++headless=True ++vx=0.5 ++envs_per_cond=20
 """
 
 import logging
