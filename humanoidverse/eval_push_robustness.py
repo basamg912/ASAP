@@ -36,14 +36,20 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from loguru import logger
 from omegaconf import OmegaConf, open_dict
-
+import math
 from humanoidverse.utils.config_utils import *  # noqa: E402, F403
 from humanoidverse.utils.logging import HydraLoggerBridge
 
+sqrt_two = math.sqrt(2)
 # heading(yaw) 프레임 Δv. left = 로봇 기준 왼쪽(+y).
-DIRS = {"front": (1.0, 0.0), "back": (-1.0, 0.0), "left": (0.0, 1.0), "right": (0.0, -1.0)}
-MAGS = [0.25, 0.5, 1.0, 1.5, 2.0, 2.5]   # m/s. 훈련 push 는 |Δv|<=0.5 (그 이상은 OOD)
-PUSH_EVERY = 150                          # 스텝. 사건 창 = 다음 push 까지
+DIRS = {"front": (1.0, 0.0), "back": (-1.0, 0.0), "left": (0.0, 1.0), "right": (0.0, -1.0),
+        # "FL": (1.0/sqrt_two,1.0/sqrt_two),
+        # "FR": (1.0/sqrt_two,-1.0/sqrt_two),
+        # "BL": (-1.0/sqrt_two,1.0/sqrt_two),
+        # "BR": (-1.0/sqrt_two,-1.0/sqrt_two),
+}
+MAGS = [0.25, 0.5, 1.0, 1.5, 2.0]   # m/s. 훈련 push 는 |Δv|<=0.5 (그 이상은 OOD)
+PUSH_EVERY = 300                          # 스텝. 사건 창 = 다음 push 까지
 RECOVERY_WINDOW = 50                      # push 후 |vx-cmd| 평균 구간
 
 

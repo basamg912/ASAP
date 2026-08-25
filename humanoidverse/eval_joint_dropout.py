@@ -41,8 +41,9 @@ DOF = ["L_hip_pitch", "L_hip_roll", "L_hip_yaw", "L_knee", "L_ankle_pitch", "L_a
        "L_sh_pitch", "L_sh_roll", "L_sh_yaw", "L_elbow",
        "R_sh_pitch", "R_sh_roll", "R_sh_yaw", "R_elbow"]
 # 다리 12 + 허리 3 + 팔 1(대조군: 보행과 무관해야 함)
-JOINTS = list(range(15)) + [15]
-CHANNELS = {"pos+vel": ["dof_pos", "dof_vel"], "pos": ["dof_pos"], "vel": ["dof_vel"]}
+JOINTS = list(range(15))
+# CHANNELS = {"pos+vel": ["dof_pos", "dof_vel"], "pos": ["dof_pos"], "vel": ["dof_vel"]}
+CHANNELS = {"pos": ["dof_pos"], "vel": ["dof_vel"]}
 MODES = ["zero", "freeze"]
 
 

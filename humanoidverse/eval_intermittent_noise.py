@@ -40,9 +40,9 @@ from humanoidverse.utils.config_utils import *  # noqa: E402, F403
 from humanoidverse.utils.logging import HydraLoggerBridge
 from humanoidverse.eval_obs_corruption import TARGETS, measured_sigma, run
 
-DUTIES = [0.02, 0.05, 0.1, 0.25, 0.5, 1.0]
+DUTIES = [0.02, 0.05, 0.2, 0.5, 1.0]
 BURSTS = [1, 5, 20]
-MAGNITUDES = [4.0, 8.0]          # 실측 sigma 배수. 4σ 는 지속 오염에서 양쪽 다 무너지는 수준
+MAGNITUDES = [2.0, 4.0]          # 실측 sigma 배수. 4σ 는 지속 오염에서 양쪽 다 무너지는 수준
 
 
 def build_conditions():

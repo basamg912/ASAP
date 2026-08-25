@@ -43,7 +43,7 @@ from humanoidverse.utils.logging import HydraLoggerBridge
 TARGETS = ["dof_pos", "dof_vel", "projected_gravity", "base_ang_vel"]
 TARGET_SETS = {t: [t] for t in TARGETS}
 TARGET_SETS["all"] = list(TARGETS)
-LEVELS = [0.5, 1.0, 2.0, 4.0]        # 실측 sigma 배수
+LEVELS = [1.0, 2.0]        # 실측 sigma 배수
 TYPES = ["gauss", "bias"]            # i.i.d. 백색 / 지속적 상수 오프셋
 
 
