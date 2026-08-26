@@ -46,11 +46,11 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, FancyBboxPatch, Patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.join(HERE, "rew1")
+ROOT = os.path.join(HERE, "cur")
 OUT_CMP = os.path.join(HERE, "saliency_baseline_vs_hist_encoder.png")
 OUT_BASE = os.path.join(HERE, "saliency_baseline.png")
 OUT_HIST = os.path.join(HERE, "saliency_hist_encoder.png")
-OBS_NPZ = {m: os.path.join(ROOT, m, "obs_stats", "obs_ckpt_61000.npz")
+OBS_NPZ = {m: os.path.join(ROOT, m, "obs_stats", "obs_ckpt_30000.npz")
            for m in ("baseline", "v3")}
 
 # ---------------- palette (validated: see dataviz skill) ----------------
@@ -112,7 +112,7 @@ def mlp(dims):
     return nn.Sequential(*layers)
 
 # ---------------- baseline: actor(474) ----------------
-sd_b = torch.load(f"{ROOT}/baseline/model_61000.pt", map_location="cpu",
+sd_b = torch.load(f"{ROOT}/baseline/model_30000.pt", map_location="cpu",
                   weights_only=False)["actor_model_state_dict"]
 actor_b = mlp([474, 512, 256, 128, 23])
 actor_b.load_state_dict({k.replace("actor_module.module.", ""): v for k, v in sd_b.items()
@@ -152,7 +152,7 @@ class Student(nn.Module):
         out = self.net(x)
         return out[..., :3], out[..., 3:]
 
-sd_v = torch.load(f"{ROOT}/v3/model_61000.pt", map_location="cpu",
+sd_v = torch.load(f"{ROOT}/v3/model_30000.pt", map_location="cpu",
                   weights_only=False)["actor_model_state_dict"]
 student = Student()
 student.load_state_dict({k.replace("student.", ""): v for k, v in sd_v.items()

@@ -130,6 +130,12 @@ class BaseSimulator:
             torques (tensor): Tensor containing torques to apply.
         """
         raise NotImplementedError("The 'apply_torques_at_dof' method must be implemented in subclasses.")
+
+    def set_root_external_force(self, force):
+        """Set a world-frame force on the robot root body."""
+        raise NotImplementedError(
+            "The 'set_root_external_force' method must be implemented in subclasses."
+        )
     
     def set_actor_root_state_tensor(self, set_env_ids, root_states):
         """

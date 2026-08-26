@@ -40,20 +40,24 @@ from humanoidverse.utils.config_utils import *  # noqa: E402, F403
 from humanoidverse.utils.logging import HydraLoggerBridge
 
 # (vx, vy, wz) — 기본 격자. 정지/전후/좌우/회전/대각을 고루 덮는다.
-DEFAULT_COMMANDS = [
-    [0.0, 0.0, 0.0],    # stand
-    [0.5, 0.0, 0.0],    # forward
-    [0.0, 0.3, 0.0],    # strafe left
-    [0.0, -0.3, 0.0],   # strafe right
-]
-
-
 # DEFAULT_COMMANDS = [
-#     [0.3, 0.0, 0.0],
-#     [0.5, 0.0, 0.0],
-#     [0.8, 0.0, 0.0],
-#     [1.0, 0.0, 0.0],
+#     # [0.0, 0.0, 0.0],    # stand
+#     [0.5, 0.0, 0.0],    # forward
+#     [0.0, 0.3, 0.0],    # strafe left
+#     [0.0, -0.3, 0.0],   # strafe right
 # ]
+
+
+DEFAULT_COMMANDS = [
+    [0.3, 0.0, 0.0],
+    [0.4, 0.0, 0.0],
+    [0.5, 0.0, 0.0],
+    [0.6, 0.0, 0.0],
+    [0.7, 0.0, 0.0],
+    [0.8, 0.0, 0.0],
+    [0.9, 0.0, 0.0],
+    [1.0, 0.0, 0.0],
+]
 
 def command_label(cmd):
     vx, vy, wz = cmd

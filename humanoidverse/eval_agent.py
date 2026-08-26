@@ -24,43 +24,75 @@ except ImportError:
     logger.warning("pynput not installed. Keyboard input will not be available.")
     keyboard = None
 
-def on_press(key, env):
-    try:
-        if key.char == "n":
-            # 리스너 스레드에서 next_task()를 직접 부르면 IsaacSim 렌더가
-            # 메인 스레드 밖에서 호출되어 RuntimeError가 남 — 플래그만 세우고
-            # 실제 전환은 평가 루프(ppo.evaluate_policy)가 수행
-            env.next_task_requested = True
-            logger.info("Next task requested (will switch on next step).")
-        # Force Control
-        # Force Control
-        if hasattr(key, "char"):
-            if key.char == "1":
+
+def on_press(key, env, push_controller=None):
+    char = getattr(key, "char", None)
+    if char is not None:
+        char = char.lower()
+
+    if char == "n":
+        # 리스너 스레드에서 next_task()를 직접 부르면 IsaacSim 렌더가
+        # 메인 스레드 밖에서 호출되어 RuntimeError가 남 — 플래그만 세우고
+        # 실제 전환은 평가 루프(ppo.evaluate_policy)가 수행
+        env.next_task_requested = True
+        logger.info("Next task requested (will switch on next step).")
+
+    if push_controller is not None:
+        key_directions = {
+            "w": "forward",
+            "s": "backward",
+            "a": "left",
+            "d": "right",
+        }
+        special_key_directions = {
+            keyboard.Key.up: "forward",
+            keyboard.Key.down: "backward",
+            keyboard.Key.left: "left",
+            keyboard.Key.right: "right",
+        }
+        direction = key_directions.get(char, special_key_directions.get(key))
+        if direction is not None:
+            push_controller.request(direction)
+            logger.info(
+                f"Base push requested: {direction}, "
+                f"{push_controller.force_newtons:g} N for "
+                f"{push_controller.duration_seconds:g} s"
+            )
+        elif char == "x":
+            push_controller.cancel()
+            logger.info("Base push cancelled.")
+
+    # Legacy hand-force controls used by force-control tasks.
+    if hasattr(env, "apply_force_tensor"):
+        try:
+            if char == "1":
                 env.apply_force_tensor[:, env.left_hand_link_index, 2] += 1.0
                 logger.info(
                     f"Left hand force: {env.apply_force_tensor[:, env.left_hand_link_index, :]}"
                 )
-            elif key.char == "2":
+            elif char == "2":
                 env.apply_force_tensor[:, env.left_hand_link_index, 2] -= 1.0
                 logger.info(
                     f"Left hand force: {env.apply_force_tensor[:, env.left_hand_link_index, :]}"
                 )
-            elif key.char == "3":
+            elif char == "3":
                 env.apply_force_tensor[:, env.right_hand_link_index, 2] += 1.0
                 logger.info(
                     f"Right hand force: {env.apply_force_tensor[:, env.right_hand_link_index, :]}"
                 )
-            elif key.char == "4":
+            elif char == "4":
                 env.apply_force_tensor[:, env.right_hand_link_index, 2] -= 1.0
                 logger.info(
                     f"Right hand force: {env.apply_force_tensor[:, env.right_hand_link_index, :]}"
                 )
-    except AttributeError:
-        pass
+        except AttributeError:
+            pass
 
 
-def listen_for_keypress(env):
-    with keyboard.Listener(on_press=lambda key: on_press(key, env)) as listener:
+def listen_for_keypress(env, push_controller=None):
+    with keyboard.Listener(
+        on_press=lambda key: on_press(key, env, push_controller)
+    ) as listener:
         listener.join()
 
 
@@ -183,9 +215,28 @@ def main(override_config: OmegaConf):
     )  # commented out for now, might need it back to save motion
     env = instantiate(config.env, device=device)
 
+    push_controller = None
+    keyboard_push_cfg = config.get("keyboard_push", {})
+    if simulator_type == "MuJoCo" and keyboard_push_cfg.get("enabled", True):
+        from humanoidverse.utils.keyboard_push import KeyboardBasePushController
+
+        push_controller = KeyboardBasePushController(
+            env,
+            force_newtons=keyboard_push_cfg.get("force_newtons", 100.0),
+            duration_seconds=keyboard_push_cfg.get("duration_seconds", 0.15),
+        )
+        push_controller.install()
+        logger.info(
+            "MuJoCo base push controls: W/Up=forward, S/Down=backward, "
+            "A/Left=left, D/Right=right, X=cancel. Directions use the "
+            "robot heading frame."
+        )
+
     # Start a thread to listen for key press
     if keyboard is not None:
-        key_listener_thread = threading.Thread(target=listen_for_keypress, args=(env,))
+        key_listener_thread = threading.Thread(
+            target=listen_for_keypress, args=(env, push_controller)
+        )
         key_listener_thread.daemon = True
         key_listener_thread.start()
 

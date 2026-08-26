@@ -10,3 +10,10 @@ headless: False
 video: False
 video_length: None
 save_video: False
+
+# MuJoCo interactive evaluation: W/A/S/D or arrow keys push the base in the
+# robot heading frame. X cancels the active pulse.
+keyboard_push:
+  enabled: True
+  force_newtons: 100.0
+  duration_seconds: 0.15

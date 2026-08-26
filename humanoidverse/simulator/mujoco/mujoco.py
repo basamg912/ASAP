@@ -264,6 +264,18 @@ class MuJoCo(BaseSimulator):
         self.data.qfrc_applied[:] = 0.0
         self.data.qfrc_applied[self._dofadr] = t
 
+    def set_root_external_force(self, force):
+        """Set the Cartesian force applied at the root body's center of mass."""
+        if torch.is_tensor(force):
+            force = force.detach().cpu().numpy()
+        force = np.asarray(force, dtype=np.float64).reshape(-1)
+        if force.size != 3:
+            raise ValueError(f"root external force must have 3 elements, got {force.shape}")
+
+        root_body_id = int(self._body_ids[0])
+        # MuJoCo xfrc_applied layout is [force_xyz, torque_xyz], in world frame.
+        self.data.xfrc_applied[root_body_id, :3] = force
+
     def set_actor_root_state_tensor(self, set_env_ids, root_states):
         rs = root_states[0] if root_states.dim() > 1 else root_states
         rs = rs.detach().cpu().numpy().astype(np.float64)
